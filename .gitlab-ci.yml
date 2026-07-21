@@ -1,0 +1,11 @@
+image: node:20
+
+stages:
+  - test
+
+test:
+  stage: test
+  script:
+    - npm ci
+    - npm test
+    - npm run pack:check

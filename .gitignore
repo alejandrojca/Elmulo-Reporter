@@ -1,0 +1,5 @@
+node_modules/
+elmulo-results-v2/
+elmulo-results-test/
+*.tgz
+.DS_Store

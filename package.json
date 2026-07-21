@@ -1,0 +1,59 @@
+{
+  "name": "@elmulo-group/elmulo-reporter",
+  "version": "2.0.0-beta.1",
+  "description": "Reporter independiente para ejecuciones de Cypress con dashboard, historial SQLite y evidencias.",
+  "type": "commonjs",
+  "main": "plugin.cjs",
+  "exports": {
+    ".": "./plugin.cjs",
+    "./cypress": "./plugin.cjs",
+    "./support": "./support.ts",
+    "./cli": "./cli.cjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "elmulo": "cli.cjs"
+  },
+  "files": [
+    "assets/",
+    "cli.cjs",
+    "core.cjs",
+    "executive-pdf.cjs",
+    "finalize.cjs",
+    "plugin.cjs",
+    "security.cjs",
+    "server.cjs",
+    "support.ts",
+    "VERSION.json",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "demo": "node cli.cjs demo",
+    "serve": "node cli.cjs serve",
+    "pack:check": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "sql.js": "1.13.0"
+  },
+  "peerDependencies": {
+    "cypress": ">=12"
+  },
+  "peerDependenciesMeta": {
+    "cypress": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitlab.com/elmulo-group/elmulo-reporter.git"
+  },
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://gitlab.com/elmulo-group/elmulo-reporter/issues"
+  },
+  "homepage": "https://gitlab.com/elmulo-group/elmulo-reporter#readme"
+}

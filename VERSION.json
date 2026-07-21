@@ -1,0 +1,9 @@
+{
+  "name": "Elmulo Reporter",
+  "version": "2.0.0-beta.1",
+  "schemaVersion": 2,
+  "source": "elmulo-reporter",
+  "results": "elmulo-results-v2",
+  "port": 4178,
+  "status": "beta"
+}
