@@ -81,7 +81,7 @@ async function serveReport(options = {}) {
   const projectRoot = path.resolve(options.projectRoot || process.cwd());
   const outputDir = path.resolve(
     projectRoot,
-    options.outputDir || process.env.ELMULO_OUTPUT_DIR || "elmulo-results-v2",
+    options.outputDir || process.env.ELMULO_OUTPUT_DIR || "elmulo-results",
   );
   const reportDir = path.join(outputDir, "report");
   const databasePath = path.join(outputDir, "elmulo.sqlite");

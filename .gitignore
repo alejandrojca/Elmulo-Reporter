@@ -1,4 +1,5 @@
 node_modules/
+elmulo-results/
 elmulo-results-v2/
 elmulo-results-test/
 *.tgz

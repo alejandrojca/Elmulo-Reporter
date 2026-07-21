@@ -857,7 +857,7 @@ async function finalizeRun(options = {}) {
   const projectRoot = path.resolve(options.projectRoot || process.cwd());
   const outputDir = path.resolve(
     projectRoot,
-    options.outputDir || process.env.ELMULO_OUTPUT_DIR || "elmulo-results-v2",
+    options.outputDir || process.env.ELMULO_OUTPUT_DIR || "elmulo-results",
   );
   const latestRunPath = path.join(outputDir, "latest-run.txt");
 

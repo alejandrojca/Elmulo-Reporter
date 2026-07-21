@@ -9,7 +9,7 @@ const { serveReport } = require("./server.cjs");
 function createDemoRun(projectRoot) {
   const outputDir = path.resolve(
     projectRoot,
-    process.env.ELMULO_OUTPUT_DIR || "elmulo-results-v2",
+    process.env.ELMULO_OUTPUT_DIR || "elmulo-results",
   );
   const startedAt = new Date(Date.now() - 84_000).toISOString();
   const endedAt = new Date().toISOString();
@@ -204,7 +204,7 @@ function createDemoRun(projectRoot) {
 function applyRetention(projectRoot, keepValue) {
   const outputDir = path.resolve(
     projectRoot,
-    process.env.ELMULO_OUTPUT_DIR || "elmulo-results-v2",
+    process.env.ELMULO_OUTPUT_DIR || "elmulo-results",
   );
   const runsDir = path.join(outputDir, "runs");
   const keep = Math.max(1, Math.min(1000, Number(keepValue || 50)));

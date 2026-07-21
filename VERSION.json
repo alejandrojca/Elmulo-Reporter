@@ -3,7 +3,7 @@
   "version": "2.0.0-beta.1",
   "schemaVersion": 2,
   "source": "elmulo-reporter",
-  "results": "elmulo-results-v2",
+  "results": "elmulo-results",
   "port": 4178,
   "status": "beta"
 }

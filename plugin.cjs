@@ -21,7 +21,7 @@ function registerElmuloReporter(on, config, options = {}) {
   const projectRoot = config.projectRoot || process.cwd();
   const outputDir = path.resolve(
     projectRoot,
-    options.outputDir || process.env.ELMULO_OUTPUT_DIR || "elmulo-results-v2",
+    options.outputDir || process.env.ELMULO_OUTPUT_DIR || "elmulo-results",
   );
   let session = null;
 

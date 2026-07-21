@@ -82,10 +82,10 @@ la CLI deben utilizar el mismo valor.
 
 ## Salida
 
-Por defecto, Elmulo crea `elmulo-results-v2` en la raíz del proyecto Cypress:
+Por defecto, Elmulo crea `elmulo-results` en la raíz del proyecto Cypress:
 
 ```text
-elmulo-results-v2/
+elmulo-results/
 ├── elmulo.sqlite
 ├── latest-run.txt
 ├── report/
