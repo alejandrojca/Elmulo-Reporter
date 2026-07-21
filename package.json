@@ -1,5 +1,5 @@
 {
-  "name": "@elmulo-group/elmulo-reporter",
+  "name": "@alejandrojca/elmulo-reporter",
   "version": "2.0.0-beta.1",
   "description": "Reporter independiente para ejecuciones de Cypress con dashboard, historial SQLite y evidencias.",
   "type": "commonjs",
@@ -49,11 +49,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://gitlab.com/elmulo-group/elmulo-reporter.git"
+    "url": "git+https://github.com/alejandrojca/Elmulo-Reporter.git"
   },
   "license": "UNLICENSED",
   "bugs": {
-    "url": "https://gitlab.com/elmulo-group/elmulo-reporter/issues"
+    "url": "https://github.com/alejandrojca/Elmulo-Reporter/issues"
   },
-  "homepage": "https://gitlab.com/elmulo-group/elmulo-reporter#readme"
+  "homepage": "https://github.com/alejandrojca/Elmulo-Reporter#readme"
 }

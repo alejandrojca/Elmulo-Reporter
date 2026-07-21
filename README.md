@@ -12,16 +12,16 @@ su implementación viva dentro de los proyectos de pruebas que lo consumen.
 
 ## Instalación
 
-Desde el GitLab Package Registry o el registro interno de la organización:
+Desde GitHub Packages o el registro interno de la organización:
 
 ```bash
-npm install --save-dev @elmulo-group/elmulo-reporter
+npm install --save-dev @alejandrojca/elmulo-reporter
 ```
 
-Durante el desarrollo también se puede instalar directamente desde GitLab:
+Durante el desarrollo también se puede instalar directamente desde GitHub:
 
 ```bash
-npm install --save-dev git+https://gitlab.com/elmulo-group/elmulo-reporter.git
+npm install --save-dev git+https://github.com/alejandrojca/Elmulo-Reporter.git
 ```
 
 ## Integración con Cypress
@@ -31,7 +31,7 @@ Registrar el plugin dentro de `setupNodeEvents`:
 ```js
 const {
   registerElmuloReporter,
-} = require("@elmulo-group/elmulo-reporter/cypress");
+} = require("@alejandrojca/elmulo-reporter/cypress");
 
 module.exports = defineConfig({
   e2e: {
@@ -52,7 +52,7 @@ debe recibir la función `on` ya envuelta para convivir con los demás plugins.
 Agregar el soporte del navegador al archivo de soporte de Cypress:
 
 ```ts
-import "@elmulo-group/elmulo-reporter/support";
+import "@alejandrojca/elmulo-reporter/support";
 ```
 
 Esto habilita la captura acotada de comandos y el comando opcional
