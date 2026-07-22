@@ -889,6 +889,300 @@ function drawTechnicalSection(pdf, run) {
   }
 }
 
+class CompactPdfLayout {
+  constructor(pdf, run) {
+    this.pdf = pdf;
+    this.run = run;
+    this.top = 0;
+    this.started = false;
+  }
+
+  newPage() {
+    if (this.started) this.pdf.footer(this.run);
+    this.pdf.newPage();
+    drawHeader(this.pdf, this.run, "Secciones seleccionadas del informe");
+    this.top = 105;
+    this.started = true;
+  }
+
+  ensure(height) {
+    if (!this.started || this.top + height > 790) this.newPage();
+  }
+
+  heading(title, subtitle, contentHeight) {
+    this.ensure(48 + contentHeight);
+    this.pdf.text(title, 34, this.top, { size: 15, bold: true });
+    this.pdf.text(subtitle, 34, this.top + 21, {
+      size: 8,
+      color: [0.38, 0.46, 0.54],
+    });
+    this.top += 47;
+  }
+
+  gap(size = 18) {
+    this.top += size;
+  }
+
+  finish() {
+    if (this.started) this.pdf.footer(this.run);
+  }
+}
+
+function compactSummary(layout, run, counts, options = {}) {
+  const showAssessment = options.showAssessment !== false;
+  layout.heading(
+    "Resumen ejecutivo",
+    "Indicadores principales y evaluacion general",
+    showAssessment ? 158 : 68,
+  );
+  const total = (run.tests || []).length;
+  const cases = new Set((run.tests || []).map((test) => test.caseId || test.id)).size;
+  const passRate = total ? Math.round((counts.passed / total) * 1000) / 10 : 0;
+  [
+    ["Casos", cases, [0.118, 0.439, 0.722]],
+    ["Ejecuciones", total, [0.047, 0.694, 0.706]],
+    ["Exitosas", counts.passed, [0.102, 0.608, 0.471]],
+    ["Fallidas", counts.failed, [0.937, 0.255, 0.38]],
+    ["Exito", `${passRate}%`, [0.486, 0.361, 0.898]],
+  ].forEach(([label, value, color], index) =>
+    drawMetric(layout.pdf, 34 + index * 106, layout.top, 98, label, value, color));
+  layout.top += 72;
+  if (!showAssessment) return;
+  const assessment = buildAssessment(counts, total);
+  layout.pdf.fillRect(34, layout.top, 527, 76, [1, 1, 1], 9);
+  layout.pdf.fillRect(34, layout.top, 7, 76, assessment.color, 3);
+  layout.pdf.text(assessment.title, 56, layout.top + 15, {
+    size: 11,
+    bold: true,
+    color: assessment.color,
+  });
+  layout.pdf.wrappedText(assessment.text, 56, layout.top + 37, 480, {
+    size: 8.3,
+    lineHeight: 11,
+    maxLines: 3,
+    color: [0.22, 0.29, 0.37],
+  });
+  layout.top += 92;
+}
+
+function compactStatus(layout, run, counts) {
+  layout.heading("Distribucion por estado", "Resultados automaticos y clasificaciones manuales", 126);
+  const total = (run.tests || []).length;
+  let cursor = 34;
+  STATUS_DEFINITIONS.forEach(([key, , color]) => {
+    const width = total ? (counts[key] / total) * 527 : 0;
+    if (width > 0) layout.pdf.fillRect(cursor, layout.top, width, 18, color);
+    cursor += width;
+  });
+  layout.pdf.strokeRect(34, layout.top, 527, 18, [0.8, 0.85, 0.9], 0.6);
+  layout.top += 31;
+  STATUS_DEFINITIONS.forEach(([key, label, color], index) => {
+    const column = index % 4;
+    const row = Math.floor(index / 4);
+    const x = 34 + column * 132;
+    const top = layout.top + row * 38;
+    layout.pdf.fillRect(x, top + 2, 8, 8, color, 4);
+    layout.pdf.text(label, x + 14, top, { size: 7.3, bold: true });
+    layout.pdf.text(`${counts[key]} - ${total ? Math.round((counts[key] / total) * 100) : 0}%`, x + 14, top + 13, {
+      size: 7,
+      color: [0.38, 0.46, 0.54],
+    });
+  });
+  layout.top += 88;
+}
+
+function compactContext(layout, run) {
+  layout.heading("Contexto de la corrida", "Informacion tecnica de la ejecucion", 130);
+  const fields = [
+    ["Corrida", run.id], ["Ambiente", run.environment], ["Inicio", formatDate(run.startedAt)],
+    ["Duracion", formatDuration(run.durationMs)], ["Navegador", `${run.browser?.name || "-"} ${run.browser?.version || ""}`.trim()],
+    ["Cypress", run.cypressVersion || "-"], ["Tags", run.tagExpression || "Sin filtro de tags"],
+    ["Rama", run.source?.branch || "-"], ["Commit", run.source?.commit || "-"], ["Pipeline", run.source?.pipelineId || "-"],
+  ];
+  layout.pdf.fillRect(34, layout.top, 527, 125, [1, 1, 1], 9);
+  fields.forEach(([label, value], index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    const x = 50 + column * 255;
+    const top = layout.top + 15 + row * 22;
+    layout.pdf.text(label, x, top, { size: 7, bold: true, color: [0.38, 0.46, 0.54] });
+    layout.pdf.text(truncate(value, 30), x + 66, top, { size: 7.5, bold: true });
+  });
+  layout.top += 141;
+}
+
+function compactTable(layout, options) {
+  const rows = options.rows || [];
+  if (!rows.length) {
+    layout.heading(options.title, options.subtitle, 58);
+    layout.pdf.fillRect(34, layout.top, 527, 52, [0.886, 0.965, 0.961], 8);
+    layout.pdf.text(options.empty, 50, layout.top + 20, {
+      size: 8.5,
+      bold: true,
+      color: [0.02, 0.38, 0.42],
+    });
+    layout.top += 68;
+    return;
+  }
+
+  let offset = 0;
+  while (offset < rows.length) {
+    const tableOverhead = 85;
+    let available = Math.min(
+      options.maxRows || 14,
+      Math.floor((790 - (layout.started ? layout.top : 105) - tableOverhead) / options.rowHeight),
+    );
+    if (available < 1 && layout.started) {
+      layout.newPage();
+      available = Math.min(
+        options.maxRows || 14,
+        Math.floor((790 - layout.top - tableOverhead) / options.rowHeight),
+      );
+    }
+    available = Math.max(1, available);
+    const chunk = rows.slice(offset, offset + available);
+    layout.heading(
+      offset ? `${options.title} - continuacion` : options.title,
+      options.subtitle,
+      37 + chunk.length * options.rowHeight,
+    );
+    layout.pdf.fillRect(34, layout.top, 527, 25, [0.063, 0.176, 0.286], 5);
+    options.headers.forEach((label, index) =>
+      layout.pdf.text(label, options.columns[index], layout.top + 8, {
+        size: 7,
+        bold: true,
+        color: [1, 1, 1],
+      }));
+    layout.top += 25;
+    chunk.forEach((row, rowIndex) => {
+      if (rowIndex % 2 === 0) layout.pdf.fillRect(34, layout.top, 527, options.rowHeight, [0.94, 0.96, 0.98]);
+      const values = options.values(row);
+      values.forEach((value, valueIndex) =>
+        layout.pdf.text(
+          truncate(value, options.maximums?.[valueIndex] || 24),
+          options.columns[valueIndex],
+          layout.top + Math.max(8, (options.rowHeight - 8) / 2),
+          { size: 7.2, bold: valueIndex === 0 },
+        ));
+      layout.top += options.rowHeight;
+    });
+    layout.top += 12;
+    offset += chunk.length;
+  }
+}
+
+function compactFeatures(layout, run) {
+  compactTable(layout, {
+    title: "Resultados por Feature",
+    subtitle: "Totales y estados agrupados por Feature",
+    rows: featureRows(run),
+    empty: "No hay Features disponibles en esta corrida.",
+    headers: ["Feature", "Total", "Exitosas", "Fallidas", "Clasificadas"],
+    columns: [45, 350, 398, 455, 510],
+    maximums: [52, 8, 8, 8, 8],
+    rowHeight: 29,
+    values: (row) => [row.name, row.total, row.passed, row.failed, row.classified],
+  });
+}
+
+function compactIssues(layout, run) {
+  const rows = (run.tests || [])
+    .filter((test) => effectiveStatus(run, test) !== "passed")
+    .sort((left, right) => {
+      const order = { failed: 0, reported: 1, environment_error: 2, precondition_error: 3, outdated_test: 4 };
+      return (order[effectiveStatus(run, left)] ?? 9) - (order[effectiveStatus(run, right)] ?? 9);
+    });
+  compactTable(layout, {
+    title: "Problemas que requieren seguimiento",
+    subtitle: "Fallos y clasificaciones de la corrida actual",
+    rows,
+    empty: "No se detectaron problemas abiertos.",
+    headers: ["Prueba", "Jira", "Estado", "Duracion"],
+    columns: [45, 340, 425, 520],
+    maximums: [50, 14, 18, 10],
+    rowHeight: 32,
+    values: (test) => [test.originalTitle || test.title, jiraId(test), STATUS_LABELS[effectiveStatus(run, test)] || effectiveStatus(run, test), formatDuration(test.durationMs)],
+  });
+}
+
+function compactComparison(layout, run) {
+  layout.heading("Comparacion con la corrida anterior", "Cambios del mismo ambiente", 93);
+  const trends = run.trends?.runs || [];
+  const currentIndex = trends.findIndex((item) => item.id === run.id);
+  const previous = currentIndex > 0 ? trends[currentIndex - 1] : trends.at(-2);
+  const current = trends.find((item) => item.id === run.id) || trends.at(-1);
+  if (!previous || !current) {
+    layout.pdf.fillRect(34, layout.top, 527, 66, [1, 1, 1], 8);
+    layout.pdf.text("Todavia no hay otra corrida comparable en este ambiente.", 50, layout.top + 25, { size: 8.5, bold: true });
+    layout.top += 82;
+    return;
+  }
+  const classified = (item) => ["environment_error", "precondition_error", "outdated_test", "reported"]
+    .reduce((sum, key) => sum + Number(item[key] || 0), 0);
+  [
+    ["Exitosas", Number(current.passed || 0), Number(previous.passed || 0), [0.102, 0.608, 0.471]],
+    ["Fallidas", Number(current.failed || 0), Number(previous.failed || 0), [0.937, 0.255, 0.38]],
+    ["Clasificadas", classified(current), classified(previous), [0.961, 0.62, 0.043]],
+    ["Duracion", Number(current.duration_ms || run.durationMs), Number(previous.duration_ms || 0), [0.118, 0.439, 0.722]],
+  ].forEach(([label, value, oldValue, color], index) => {
+    const x = 34 + index * 132;
+    layout.pdf.fillRect(x, layout.top, 122, 72, [1, 1, 1], 8);
+    layout.pdf.fillRect(x, layout.top, 122, 4, color, 2);
+    layout.pdf.text(label, x + 11, layout.top + 15, { size: 7.3, bold: true, color: [0.38, 0.46, 0.54] });
+    layout.pdf.text(index === 3 ? formatDuration(value) : value, x + 11, layout.top + 34, { size: 12, bold: true });
+    const delta = value - oldValue;
+    layout.pdf.text(`${delta > 0 ? "+" : ""}${index === 3 ? formatDuration(delta) : delta} vs. anterior`, x + 11, layout.top + 55, { size: 6.7 });
+  });
+  layout.top += 88;
+}
+
+function compactHistory(layout, run) {
+  compactTable(layout, {
+    title: "Historial reciente",
+    subtitle: "Ultimas ejecuciones del mismo ambiente",
+    rows: (run.trends?.runs || []).slice(-12).reverse(),
+    empty: "No hay ejecuciones historicas disponibles.",
+    headers: ["Fecha", "Total", "Exitosas", "Fallidas", "% exito"],
+    columns: [45, 335, 390, 455, 518],
+    maximums: [38, 8, 8, 8, 8],
+    rowHeight: 28,
+    values: (row) => {
+      const total = Number(row.total || 0);
+      return [formatDate(row.started_at), total, Number(row.passed || 0), Number(row.failed || 0), `${total ? Math.round((Number(row.passed || 0) / total) * 100) : 0}%`];
+    },
+  });
+}
+
+function compactRanking(layout, options) {
+  compactTable(layout, {
+    title: options.title,
+    subtitle: options.subtitle,
+    rows: options.rows || [],
+    empty: options.empty,
+    headers: ["Prueba", "Detalle"],
+    columns: [45, 355],
+    maximums: [52, 34],
+    rowHeight: 28,
+    values: (item) => [item.title || item.originalTitle || "Prueba", options.detail(item)],
+  });
+}
+
+function compactRecommendation(layout, run, counts) {
+  layout.heading("Recomendacion y pendientes", "Decision ejecutiva y seguimiento necesario", 132);
+  const assessment = buildAssessment(counts, (run.tests || []).length);
+  layout.pdf.fillRect(34, layout.top, 527, 82, [1, 1, 1], 9);
+  layout.pdf.fillRect(34, layout.top, 7, 82, assessment.color, 3);
+  layout.pdf.text(assessment.title, 56, layout.top + 16, { size: 11, bold: true, color: assessment.color });
+  layout.pdf.wrappedText(assessment.text, 56, layout.top + 39, 475, { size: 8, lineHeight: 11, maxLines: 3 });
+  layout.top += 93;
+  const failed = (run.tests || []).filter((test) => effectiveStatus(run, test) === "failed");
+  const missingComments = failed.filter((test) => !run.annotations?.[test.id]?.comment).length;
+  const missingTickets = failed.filter((test) => !run.annotations?.[test.id]?.ticket).length;
+  layout.pdf.text(`${missingComments} fallos sin comentario`, 50, layout.top + 5, { size: 8, bold: true });
+  layout.pdf.text(`${missingTickets} fallos sin ticket`, 315, layout.top + 5, { size: 8, bold: true });
+  layout.top += 35;
+}
+
 function buildExecutivePdf(run, options = {}) {
   if (!run || !Array.isArray(run.tests)) {
     throw new Error("La corrida no contiene resultados exportables.");
@@ -899,35 +1193,41 @@ function buildExecutivePdf(run, options = {}) {
   const pdf = new PdfCanvas();
   const counts = buildStatusSummary(run);
   drawCover(pdf, run);
-  if (sections.has("summary")) drawSummarySection(pdf, run, counts);
-  if (sections.has("statusDistribution")) drawStatusSection(pdf, run, counts);
-  if (sections.has("runContext")) drawContextSection(pdf, run);
-  if (sections.has("features")) drawFeaturesSection(pdf, run);
-  if (sections.has("issues")) drawIssuesPage(pdf, run);
-  if (sections.has("previousComparison")) drawComparisonSection(pdf, run);
-  if (sections.has("recentHistory")) drawHistorySection(pdf, run);
-  if (sections.has("flaky")) drawTestRankingSection(pdf, run, {
+  const layout = new CompactPdfLayout(pdf, run);
+  if (sections.has("summary")) compactSummary(layout, run, counts, {
+    showAssessment: !sections.has("recommendation"),
+  });
+  if (sections.has("statusDistribution")) compactStatus(layout, run, counts);
+  // La recomendacion es parte de la lectura ejecutiva principal. Ubicarla aqui
+  // equilibra las paginas siguientes y evita una ultima pagina casi vacia.
+  if (sections.has("recommendation")) compactRecommendation(layout, run, counts);
+  if (sections.has("runContext")) compactContext(layout, run);
+  if (sections.has("features")) compactFeatures(layout, run);
+  if (sections.has("issues")) compactIssues(layout, run);
+  if (sections.has("previousComparison")) compactComparison(layout, run);
+  if (sections.has("recentHistory")) compactHistory(layout, run);
+  if (sections.has("flaky")) compactRanking(layout, {
     title: "Pruebas inestables",
     subtitle: "Casos que pasaron luego de uno o mas reintentos",
     rows: (run.tests || []).filter((test) => test.flaky),
     empty: "No se detectaron pruebas inestables en la corrida actual.",
     detail: (test) => `${test.retries || 0} reintentos - ${test.spec || ""}`,
   });
-  if (sections.has("recurrentFailures")) drawTestRankingSection(pdf, run, {
+  if (sections.has("recurrentFailures")) compactRanking(layout, {
     title: "Fallos recurrentes",
     subtitle: "Pruebas con fallos repetidos en el historial",
     rows: run.analytics?.recurrentFailures || [],
     empty: "No se detectaron fallos recurrentes en el historial disponible.",
     detail: (test) => `${test.failures || test.failed || 0} fallos de ${test.executions || 0} ejecuciones - Jira ${test.jira_id || "-"}`,
   });
-  if (sections.has("slowTests")) drawTestRankingSection(pdf, run, {
+  if (sections.has("slowTests")) compactRanking(layout, {
     title: "Pruebas mas lentas",
     subtitle: "Ranking historico por duracion",
     rows: run.analytics?.slowest || [],
     empty: "No hay informacion suficiente para calcular pruebas lentas.",
     detail: (test) => `Promedio ${formatDuration(test.average_duration || test.duration_ms || test.durationMs)} - ${test.spec || ""}`,
   });
-  if (sections.has("recommendation")) drawRecommendationSection(pdf, run, counts);
+  layout.finish();
   if (sections.has("technicalFailures")) drawTechnicalSection(pdf, run);
   return pdf.finish(run);
 }

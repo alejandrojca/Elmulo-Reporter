@@ -378,7 +378,7 @@ test("genera un PDF ejecutivo modular con secciones seleccionables", () => {
   const pdf = buildExecutivePdf(run);
   const source = pdf.toString("latin1");
   assert.equal(pdf.subarray(0, 8).toString("ascii"), "%PDF-1.4");
-  assert.match(source, /\/Count 11/);
+  assert.match(source, /\/Count 4/);
   assert.match(source, /Informe ejecutivo de calidad/);
   assert.match(source, /Comparacion con la corrida anterior/);
 
