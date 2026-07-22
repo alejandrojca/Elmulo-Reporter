@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function ensureDir(directory) {
   fs.mkdirSync(directory, { recursive: true });
@@ -168,6 +168,7 @@ function normalizeCypressResults(results, context) {
         steps: [],
         tags: [],
         logs: [],
+        http: [],
         attachments: [],
       };
 

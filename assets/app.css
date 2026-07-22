@@ -3158,6 +3158,7 @@ html[data-theme="dark"] .confirmReuseButton {
 
 .timelineList,
 .attemptList,
+.httpExchangeList,
 .attachmentList {
   display: grid;
   gap: 0.55rem;
@@ -3168,12 +3169,44 @@ html[data-theme="dark"] .confirmReuseButton {
 
 .timelineStep,
 .attempt,
+.httpExchange,
 .timelineLog,
 .attachment {
   background: var(--pw-blue-050);
   border: 1px solid var(--pw-gray-200);
   border-radius: 14px;
   padding: 0.75rem;
+}
+
+.httpExchange > p {
+  color: var(--pw-gray-700);
+  font-size: 0.78rem;
+  font-weight: 800;
+  margin: 0 0 0.55rem;
+  text-transform: uppercase;
+}
+
+.httpDisclosure + .httpDisclosure {
+  margin-top: 0.5rem;
+}
+
+.httpDisclosure summary {
+  color: var(--pw-blue-900);
+  cursor: pointer;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.httpDisclosure pre {
+  margin: 0.65rem 0 0;
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.httpEmpty {
+  color: var(--pw-gray-700);
+  margin: 0;
 }
 
 .timelineHeader {

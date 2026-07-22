@@ -9,7 +9,7 @@ const {
 } = require("./core.cjs");
 const { normalizeActor, sanitizeText } = require("./security.cjs");
 
-const DATABASE_SCHEMA_VERSION = 2;
+const DATABASE_SCHEMA_VERSION = 3;
 
 const VALID_ANNOTATION_STATUSES = new Set([
   "passed",
@@ -323,6 +323,7 @@ async function openDatabase(databasePath) {
       flaky INTEGER NOT NULL,
       jira_id TEXT NOT NULL DEFAULT '',
       tags_json TEXT NOT NULL DEFAULT '[]',
+      http_json TEXT NOT NULL DEFAULT '[]',
       PRIMARY KEY (run_id, test_id)
     );
   `);
@@ -334,6 +335,9 @@ async function openDatabase(databasePath) {
   }
   if (!testColumns.has("tags_json")) {
     database.run("ALTER TABLE tests ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';");
+  }
+  if (!testColumns.has("http_json")) {
+    database.run("ALTER TABLE tests ADD COLUMN http_json TEXT NOT NULL DEFAULT '[]';");
   }
   if (!testColumns.has("logical_id")) {
     database.run("ALTER TABLE tests ADD COLUMN logical_id TEXT NOT NULL DEFAULT '';");
@@ -430,7 +434,7 @@ function persistRun(database, run) {
         cypressVersion: run.cypressVersion || "",
         system: run.system || {},
         source: run.source || {},
-        reporterVersion: "2.0.0-beta.1",
+        reporterVersion: "2.0.0-beta.2",
       }),
     ],
   );
@@ -438,8 +442,8 @@ function persistRun(database, run) {
   const statement = database.prepare(
     `INSERT OR REPLACE INTO tests (
       run_id, test_id, spec, title, status, duration_ms, retries, flaky,
-      jira_id, tags_json, logical_id, case_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      jira_id, tags_json, logical_id, case_id, http_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const test of run.tests) {
     statement.run([
@@ -455,6 +459,7 @@ function persistRun(database, run) {
       JSON.stringify(test.tags || []),
       test.logicalId || test.id,
       test.caseId || test.logicalId || test.id,
+      JSON.stringify(test.http || []),
     ]);
   }
   statement.free();
@@ -619,6 +624,7 @@ function loadRunResults(database, runId) {
             t.status AS original_status,
             COALESCE(a.status, t.status) AS status,
             t.duration_ms, t.retries, t.flaky, t.jira_id, t.tags_json,
+            t.http_json,
             COALESCE(a.comment, '') AS comment,
             COALESCE(a.ticket, '') AS ticket,
             a.updated_at
@@ -629,6 +635,15 @@ function loadRunResults(database, runId) {
       ORDER BY t.spec, t.title`,
     [runId],
   );
+
+  for (const test of tests) {
+    try {
+      test.http = JSON.parse(test.http_json || "[]");
+    } catch {
+      test.http = [];
+    }
+    delete test.http_json;
+  }
 
   return { ...run, tests };
 }
@@ -874,7 +889,7 @@ async function finalizeRun(options = {}) {
   if (!run) throw new Error(`No se encontró ${rawPath}`);
 
   run.schemaVersion = DATABASE_SCHEMA_VERSION;
-  run.reporterVersion = "2.0.0-beta.1";
+  run.reporterVersion = "2.0.0-beta.2";
   run.lifecycle = run.lifecycle || "completed";
   run.source = run.source || {
     branch: process.env.CI_COMMIT_REF_NAME || "",

@@ -1432,6 +1432,55 @@
     </section>`;
   }
 
+  function firstErrorLine(error) {
+    const value = String(error?.message || error?.stack || "").trim();
+    return value.split(/\r?\n/).find((line) => line.trim())?.trim() || "Error sin detalle.";
+  }
+
+  function formatHttpPayload(value) {
+    if (typeof value === "string") return value;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value ?? "");
+    }
+  }
+
+  function renderHttpExchanges(test) {
+    const exchanges = Array.isArray(test.http) ? test.http : [];
+    if (!exchanges.length) {
+      return `<section class="detailSection">
+        <h3>Intercambio HTTP</h3>
+        <p class="httpEmpty">No se registraron requests para esta prueba fallida.</p>
+      </section>`;
+    }
+
+    return `<section class="detailSection">
+      <h3>Request y respuesta</h3>
+      <div class="httpExchangeList">
+        ${exchanges.map((exchange, index) => {
+          const request = exchange?.request || {};
+          const response = exchange?.response || {};
+          const requestLabel = `${request.method || "HTTP"} ${request.url || ""}`.trim();
+          const responseLabel = response.status
+            ? `HTTP ${response.status}${response.statusText ? ` · ${response.statusText}` : ""}`
+            : "Respuesta sin código HTTP";
+          return `<article class="httpExchange">
+            <p>Intercambio ${index + 1}</p>
+            <details class="httpDisclosure">
+              <summary>Request · ${escapeHtml(requestLabel)}</summary>
+              <pre>${escapeHtml(formatHttpPayload(request))}</pre>
+            </details>
+            <details class="httpDisclosure">
+              <summary>Respuesta · ${escapeHtml(responseLabel)}</summary>
+              <pre>${escapeHtml(formatHttpPayload(response))}</pre>
+            </details>
+          </article>`;
+        }).join("")}
+      </div>
+    </section>`;
+  }
+
   function renderMedia(test) {
     const screenshots = (test.attempts || []).flatMap((attempt) =>
       (attempt.screenshots || []).filter((item) => item?.available));
@@ -1952,8 +2001,9 @@
           : ""}
         ${state.detailTab === "error"
           ? `${test.error
-              ? `<section class="detailSection"><h3>Error final</h3><pre>${escapeHtml(test.error.stack || test.error.message)}</pre></section>`
+              ? `<section class="detailSection"><h3>Error final</h3><pre>${escapeHtml(firstErrorLine(test.error))}</pre></section>`
               : '<div class="emptyState compact"><strong>Esta ejecución no tiene un error final.</strong></div>'}
+             ${test.status === "failed" ? renderHttpExchanges(test) : ""}
              ${renderFailureReview(test)}`
           : ""}
         ${state.detailTab === "attempts" ? renderAttempts(test) : ""}
@@ -2705,7 +2755,7 @@
         </div>
       </section>
 
-      <footer class="footer">Elmulo Reporter V2 beta · Esquema ${escapeHtml(run.schemaVersion || 2)} · Run ${escapeHtml(run.id)} · Generado ${escapeHtml(formatDate(run.generatedAt))}</footer>
+      <footer class="footer">Elmulo Reporter V2 beta · Esquema ${escapeHtml(run.schemaVersion || 3)} · Run ${escapeHtml(run.id)} · Generado ${escapeHtml(formatDate(run.generatedAt))}</footer>
       </main>
       </div>
     </div>

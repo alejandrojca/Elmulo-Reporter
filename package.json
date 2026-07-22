@@ -1,6 +1,6 @@
 {
   "name": "@alejandrojca/elmulo-reporter",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
   "description": "Reporter independiente para ejecuciones de Cypress con dashboard, historial SQLite y evidencias.",
   "type": "commonjs",
   "main": "plugin.cjs",

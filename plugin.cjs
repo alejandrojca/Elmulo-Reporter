@@ -17,7 +17,14 @@ const {
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 function registerElmuloReporter(on, config, options = {}) {
-  config.env = { ...(config.env || {}), elmulo: true };
+  const captureHttp =
+    options.captureHttp !== false &&
+    String(process.env.ELMULO_CAPTURE_HTTP || "true").toLowerCase() !== "false";
+  config.env = {
+    ...(config.env || {}),
+    elmulo: true,
+    elmuloCaptureHttp: captureHttp,
+  };
   const projectRoot = config.projectRoot || process.cwd();
   const outputDir = path.resolve(
     projectRoot,
@@ -41,7 +48,7 @@ function registerElmuloReporter(on, config, options = {}) {
         "unknown",
       tagExpression: config.env?.TAGS || process.env.CYPRESS_TAGS || "",
       lifecycle: "running",
-      reporterVersion: "2.0.0-beta.1",
+      reporterVersion: "2.0.0-beta.2",
     });
     fs.writeFileSync(path.join(outputDir, "latest-run.txt"), runId, "utf8");
     return session;
@@ -79,6 +86,21 @@ function registerElmuloReporter(on, config, options = {}) {
         test.logs =
           logsByTest.get(exactKey) ||
           logsByTest.get(test.title) ||
+          [];
+      }
+    }
+
+    const httpManifestPath = path.join(session.runDir, "http", "manifest.json");
+    if (fs.existsSync(httpManifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(httpManifestPath, "utf8"));
+      const httpByTest = new Map(
+        manifest.map((entry) => [entry.testKey, entry.exchanges || []]),
+      );
+      for (const test of normalized.tests) {
+        const exactKey = test.titlePath.join(" â€º ");
+        test.http =
+          httpByTest.get(exactKey) ||
+          httpByTest.get(test.title) ||
           [];
       }
     }
@@ -127,6 +149,28 @@ function registerElmuloReporter(on, config, options = {}) {
         logs: Array.isArray(logs)
           ? logs.slice(-500).map(sanitizeLogEntry)
           : [],
+      };
+      const existingIndex = manifest.findIndex(
+        (item) => item.testKey === entry.testKey,
+      );
+      if (existingIndex >= 0) manifest[existingIndex] = entry;
+      else manifest.push(entry);
+      writeJson(manifestPath, manifest);
+      return null;
+    },
+
+    "elmulo:recordHttp"({ testKey, exchanges }) {
+      if (!session) startSession();
+      const httpDir = path.join(session.runDir, "http");
+      ensureDir(httpDir);
+      const manifestPath = path.join(httpDir, "manifest.json");
+      const manifest = fs.existsSync(manifestPath)
+        ? JSON.parse(fs.readFileSync(manifestPath, "utf8"))
+        : [];
+      const entry = {
+        testKey: String(testKey || ""),
+        // Deliberately unredacted: exact values are required for diagnosis.
+        exchanges: Array.isArray(exchanges) ? exchanges : [],
       };
       const existingIndex = manifest.findIndex(
         (item) => item.testKey === entry.testKey,

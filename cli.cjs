@@ -159,7 +159,7 @@ function createDemoRun(projectRoot) {
   );
 
   const run = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: runId,
     projectName: "acceptance-tests",
     environment: "sandbox",

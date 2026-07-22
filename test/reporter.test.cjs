@@ -107,7 +107,63 @@ test("habilita Elmulo solo en la configuración donde se registra", () => {
   );
 
   assert.equal(config.env.elmulo, true);
+  assert.equal(config.env.elmuloCaptureHttp, true);
   assert.deepEqual(events, ["before:run", "after:run", "task"]);
+});
+
+test("conserva requests y respuestas sin ofuscar al consolidar la corrida", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-http-"));
+  const handlers = {};
+  registerElmuloReporter(
+    (eventName, handler) => {
+      handlers[eventName] = handler;
+    },
+    { projectRoot, env: { ENVIRONMENT: "sandbox" } },
+  );
+
+  handlers["before:run"]({ startedTestsAt: "2026-07-17T10:00:00.000Z" });
+  handlers.task["elmulo:recordHttp"]({
+    testKey: "Feature name â€º Scenario name",
+    exchanges: [{
+      request: {
+        method: "POST",
+        url: "https://api.example.test/payments",
+        headers: { authorization: "Bearer exact-secret" },
+        body: { account: "00123456789" },
+      },
+      response: { status: 402, body: { code: "PAY-009" } },
+    }],
+  });
+  handlers["after:run"]({
+    startedTestsAt: "2026-07-17T10:00:00.000Z",
+    endedTestsAt: "2026-07-17T10:00:01.000Z",
+    totalDuration: 1000,
+    runs: [{
+      spec: { relative: "cypress/e2e/example.feature", name: "example.feature" },
+      stats: { duration: 1000 },
+      tests: [{
+        title: ["Feature name", "Scenario name"],
+        state: "failed",
+        attempts: [{
+          state: "failed",
+          duration: 1000,
+          error: { message: "AssertionError: expected 402 to equal 201" },
+        }],
+      }],
+    }],
+  });
+
+  const runId = fs.readFileSync(path.join(projectRoot, "elmulo-results", "latest-run.txt"), "utf8");
+  const persistedRun = JSON.parse(fs.readFileSync(
+    path.join(projectRoot, "elmulo-results", "runs", runId, "run.json"),
+    "utf8",
+  ));
+  assert.equal(
+    persistedRun.tests[0].http[0].request.headers.authorization,
+    "Bearer exact-secret",
+  );
+  assert.equal(persistedRun.tests[0].http[0].request.body.account, "00123456789");
+  assert.equal(persistedRun.tests[0].http[0].response.status, 402);
 });
 
 test("expone una integración reutilizable para Cypress", () => {
@@ -185,6 +241,18 @@ test("persiste historial real en un archivo SQLite", async () => {
   const databasePath = path.join(tempDir, "history.sqlite");
   const run = buildRun();
   run.tests[0].tags = ["@FONLP06-9999", "@smoke"];
+  run.tests[0].http = [{
+    request: {
+      method: "POST",
+      url: "https://api.example.test/payments",
+      headers: { authorization: "Bearer developer-secret" },
+      body: { cardNumber: "4111111111111111" },
+    },
+    response: {
+      status: 402,
+      body: { reason: "insufficient_funds", internalCode: "PAY-009" },
+    },
+  }];
   const database = await openDatabase(databasePath);
   persistRun(database, run);
   const trends = buildTrends(database, run);
@@ -210,6 +278,15 @@ test("persiste historial real en un archivo SQLite", async () => {
   assert.equal(annotations[run.tests[0].id].status, "reported");
   assert.equal(historicalRun.tests[0].status, "reported");
   assert.equal(historicalRun.tests[0].ticket, "https://tracker.example/BUG-1234");
+  assert.equal(
+    historicalRun.tests[0].http[0].request.headers.authorization,
+    "Bearer developer-secret",
+  );
+  assert.equal(
+    historicalRun.tests[0].http[0].request.body.cardNumber,
+    "4111111111111111",
+  );
+  assert.equal(historicalRun.tests[0].http[0].response.status, 402);
   assert.equal(jiraHistory.length, 1);
   assert.equal(jiraHistory[0].jira_id, "FONLP06-9999");
 
@@ -414,6 +491,12 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /truncateStepWords/);
   assert.match(appSource, /word\.slice\(0, maximum - 3\)/);
   assert.match(appSource, /class="stepText"/);
+  assert.match(appSource, /function firstErrorLine/);
+  assert.match(appSource, /firstErrorLine\(test\.error\)/);
+  assert.match(appSource, /function renderHttpExchanges/);
+  assert.match(appSource, /<details class="httpDisclosure">/);
+  assert.doesNotMatch(appSource, /<details class="httpDisclosure" open>/);
+  assert.match(stylesSource, /\.httpExchangeList/);
   assert.match(stylesSource, /\.statusDonut/);
   assert.match(stylesSource, /\.statusDistributionLegend/);
   assert.match(

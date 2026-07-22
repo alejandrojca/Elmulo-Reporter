@@ -243,9 +243,48 @@ Agregar el soporte del navegador al archivo de soporte de Cypress:
 import "@alejandrojca/elmulo-reporter/support";
 ```
 
-Esto habilita la captura acotada de comandos y el comando opcional
-`cy.elmuloAttach(...)`. Los cuerpos internos, variables de entorno y
-`consoleProps` no se persisten para reducir el riesgo de guardar secretos.
+Esto habilita la captura acotada de comandos, la captura de `cy.request` y el
+comando opcional `cy.elmuloAttach(...)`. Los logs generales continúan
+sanitizados y no se persisten `consoleProps`.
+
+### Requests y respuestas de pruebas fallidas
+
+Elmulo captura automáticamente todos los `cy.request` de todas las features.
+Si la prueba termina fallida, guarda cada request y su respuesta en `run.json`,
+en el HTML generado y en la columna `http_json` de `elmulo.sqlite`. En la
+pestaña **Error**, ambos aparecen cerrados por defecto y pueden desplegarse
+para analizar el problema. Si la prueba termina correctamente, esos datos no
+se conservan.
+
+La captura HTTP es deliberadamente literal: **no oculta ni reemplaza ningún
+valor**. Headers, tokens, cookies, credenciales, parámetros y cuerpos quedan en
+texto plano tal como fueron enviados o recibidos. Por eso:
+
+- no subir `elmulo-results` a Git;
+- no compartir la base, el HTML ni `runs/` fuera de los canales autorizados;
+- aplicar al directorio de resultados los mismos controles que a las
+  credenciales y a los datos del ambiente probado;
+- revisar qué datos se incluirán antes de implementar o utilizar una futura
+  integración que cree bugs en Jira.
+
+Si un proyecto no puede almacenar estos datos, se puede desactivar la captura
+sin modificar las features.
+
+PowerShell:
+
+```powershell
+$env:ELMULO_CAPTURE_HTTP = "false"
+npm run report-sandbox-ecommerce -- "@mtt"
+```
+
+Git Bash, Linux o macOS:
+
+```bash
+ELMULO_CAPTURE_HTTP=false npm run report-sandbox-ecommerce -- "@mtt"
+```
+
+También puede configurarse `captureHttp: false` al llamar a
+`registerElmuloReporter`.
 
 ## Comandos
 
