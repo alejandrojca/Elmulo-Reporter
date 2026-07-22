@@ -868,6 +868,23 @@ function copyStaticAssets(reportDir) {
   }
 }
 
+function mergeHttpManifest(run, runDir) {
+  const manifest = readJson(path.join(runDir, "http", "manifest.json"), []);
+  if (!Array.isArray(manifest) || !manifest.length) return;
+
+  for (const test of run.tests || []) {
+    const exactKey = (test.titlePath || []).join(" â€º ");
+    const entry = manifest.find((candidate) => {
+      const candidateKey = String(candidate?.testKey || "");
+      if (candidateKey === exactKey || candidateKey === test.title) return true;
+      return Boolean(test.title) &&
+        candidateKey.endsWith(test.title) &&
+        (test.titlePath || []).every((part) => candidateKey.includes(part));
+    });
+    test.http = Array.isArray(entry?.exchanges) ? entry.exchanges : test.http || [];
+  }
+}
+
 async function finalizeRun(options = {}) {
   const projectRoot = path.resolve(options.projectRoot || process.cwd());
   const outputDir = path.resolve(
@@ -898,6 +915,7 @@ async function finalizeRun(options = {}) {
     jobId: process.env.CI_JOB_ID || "",
     jobUrl: process.env.CI_JOB_URL || "",
   };
+  mergeHttpManifest(run, runDir);
   mergeCucumber(run, readCucumberScenarios(projectRoot));
   enrichRunTests(run);
   copyEvidence(projectRoot, runDir, run);
