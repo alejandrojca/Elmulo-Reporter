@@ -48,7 +48,7 @@ function registerElmuloReporter(on, config, options = {}) {
         "unknown",
       tagExpression: config.env?.TAGS || process.env.CYPRESS_TAGS || "",
       lifecycle: "running",
-      reporterVersion: "2.0.0-beta.2",
+      reporterVersion: "2.0.0-beta.3",
     });
     fs.writeFileSync(path.join(outputDir, "latest-run.txt"), runId, "utf8");
     return session;

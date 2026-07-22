@@ -303,6 +303,23 @@ npx elmulo demo
 - `retention` conserva la cantidad indicada de corridas.
 - `demo` genera datos de demostración.
 
+## PDF ejecutivo configurable
+
+Desde la pantalla **Resumen**, el botón **Exportar PDF ejecutivo** abre una
+ventana sobre el reporte. Allí se pueden marcar las secciones que formarán el
+documento. La portada, la identificación de la corrida, la fecha de generación
+y la numeración de páginas se incluyen siempre.
+
+La selección recomendada incluye resumen, distribución por estado, contexto,
+Features, problemas, comparación, historial, pruebas inestables, fallos
+recurrentes y recomendación. Las pruebas más lentas y el detalle técnico se
+encuentran desmarcados inicialmente.
+
+La opción **Detalle técnico de fallas** incorpora errores, requests y respuestas
+sin ocultar valores. El PDF resultante puede contener tokens, credenciales,
+cookies, datos de pago u otra información sensible, por lo que debe revisarse
+antes de compartirlo.
+
 El puerto predeterminado es `4178`. Puede configurarse mediante
 `ELMULO_PORT`. La salida puede cambiarse con `ELMULO_OUTPUT_DIR`; el plugin y
 la CLI deben utilizar el mismo valor.

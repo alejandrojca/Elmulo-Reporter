@@ -15,7 +15,10 @@ const {
   VALID_ANNOTATION_STATUSES,
 } = require("./finalize.cjs");
 const { atomicWriteFile, writeJson } = require("./core.cjs");
-const { buildExecutivePdf } = require("./executive-pdf.cjs");
+const {
+  PDF_SECTIONS,
+  buildExecutivePdf,
+} = require("./executive-pdf.cjs");
 const { normalizeActor, sanitizeText } = require("./security.cjs");
 
 const MIME_TYPES = {
@@ -114,16 +117,31 @@ async function serveReport(options = {}) {
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, {
         ok: true,
-        version: "2.0.0-beta.2",
+        version: "2.0.0-beta.3",
         schemaVersion: 3,
       });
       return;
     }
 
     if (request.method === "GET" && url.pathname === "/api/export/executive.pdf") {
+      const requestedSections = url.searchParams.has("sections")
+        ? url.searchParams.get("sections").split(",").filter(Boolean)
+        : undefined;
+      if (requestedSections && (
+        !requestedSections.length ||
+        requestedSections.some((section) => !PDF_SECTIONS.includes(section))
+      )) {
+        sendJson(response, 400, { error: "La selección de secciones no es válida." });
+        return;
+      }
       try {
         const run = JSON.parse(fs.readFileSync(dataPath, "utf8"));
-        const pdf = buildExecutivePdf(run);
+        if (requestedSections?.some((section) => ["recurrentFailures", "slowTests"].includes(section))) {
+          const database = await openDatabase(databasePath);
+          run.analytics = buildQualityAnalytics(database, run.environment);
+          database.close();
+        }
+        const pdf = buildExecutivePdf(run, { sections: requestedSections });
         const environment = String(run.environment || "ambiente")
           .toLowerCase()
           .replace(/[^a-z0-9_-]/g, "");

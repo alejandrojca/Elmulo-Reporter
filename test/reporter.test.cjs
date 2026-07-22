@@ -359,7 +359,7 @@ test("consolida la calidad histórica usando la identidad canónica de Jira", as
   database.close();
 });
 
-test("genera un PDF ejecutivo descargable con tres secciones", () => {
+test("genera un PDF ejecutivo modular con secciones seleccionables", () => {
   const run = buildRun();
   enrichRunTests(run);
   run.annotations = {};
@@ -378,9 +378,19 @@ test("genera un PDF ejecutivo descargable con tres secciones", () => {
   const pdf = buildExecutivePdf(run);
   const source = pdf.toString("latin1");
   assert.equal(pdf.subarray(0, 8).toString("ascii"), "%PDF-1.4");
-  assert.match(source, /\/Count 3/);
+  assert.match(source, /\/Count 11/);
   assert.match(source, /Informe ejecutivo de calidad/);
   assert.match(source, /Comparacion con la corrida anterior/);
+
+  const selectedPdf = buildExecutivePdf(run, { sections: ["summary"] });
+  const selectedSource = selectedPdf.toString("latin1");
+  assert.match(selectedSource, /\/Count 2/);
+  assert.match(selectedSource, /Resumen ejecutivo/);
+  assert.doesNotMatch(selectedSource, /Comparacion con la corrida anterior/);
+  assert.throws(
+    () => buildExecutivePdf(run, { sections: [] }),
+    /Selecciona al menos una seccion/,
+  );
 });
 
 test("configura la interfaz sin selección y con seguimiento de fallas", () => {
@@ -488,6 +498,14 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /id="export-executive-pdf"/);
   assert.match(appSource, /\/api\/export\/executive\.pdf/);
   assert.match(stylesSource, /\.exportPdfButton/);
+  assert.match(appSource, /id="pdf-export-modal"/);
+  assert.match(appSource, /function openPdfExportModal/);
+  assert.match(appSource, /name="pdf-section"/);
+  assert.match(appSource, /Usar selección recomendada/);
+  assert.match(appSource, /Puede contener credenciales y datos sensibles/);
+  assert.match(appSource, /sections=\$\{sectionQuery\}/);
+  assert.match(stylesSource, /\.pdfExportModal/);
+  assert.match(stylesSource, /\.pdfSectionGrid/);
   assert.match(appSource, /truncateStepWords/);
   assert.match(appSource, /word\.slice\(0, maximum - 3\)/);
   assert.match(appSource, /class="stepText"/);

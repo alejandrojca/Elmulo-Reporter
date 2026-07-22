@@ -11,6 +11,25 @@ const STATUS_DEFINITIONS = [
 
 const STATUS_LABELS = Object.fromEntries(STATUS_DEFINITIONS.map(([key, label]) => [key, label]));
 
+const PDF_SECTIONS = [
+  "summary",
+  "statusDistribution",
+  "runContext",
+  "features",
+  "issues",
+  "previousComparison",
+  "recentHistory",
+  "flaky",
+  "recurrentFailures",
+  "slowTests",
+  "recommendation",
+  "technicalFailures",
+];
+
+const DEFAULT_PDF_SECTIONS = PDF_SECTIONS.filter(
+  (section) => !["slowTests", "technicalFailures"].includes(section),
+);
+
 function normalizeText(value) {
   return String(value ?? "")
     .replaceAll("\u2013", "-")
@@ -606,20 +625,317 @@ function drawQualityPage(pdf, run, counts) {
   pdf.footer(run);
 }
 
-function buildExecutivePdf(run) {
+function drawCover(pdf, run) {
+  const counts = buildStatusSummary(run);
+  const assessment = buildAssessment(counts, (run.tests || []).length);
+  pdf.text("ELMULO REPORTER", 50, 82, {
+    size: 11,
+    bold: true,
+    color: [0.047, 0.694, 0.706],
+  });
+  pdf.text("Informe ejecutivo", 50, 126, { size: 30, bold: true });
+  pdf.text("de calidad", 50, 164, { size: 30, bold: true });
+  pdf.wrappedText(
+    `${normalizeText(run.projectName || "Proyecto")} - ${String(run.environment || "N/A").toUpperCase()}`,
+    50,
+    220,
+    480,
+    { size: 13, bold: true, color: [0.118, 0.439, 0.722] },
+  );
+  pdf.fillRect(50, 288, 495, 126, [1, 1, 1], 12);
+  pdf.fillRect(50, 288, 8, 126, assessment.color, 4);
+  pdf.text(assessment.title, 78, 315, { size: 15, bold: true, color: assessment.color });
+  pdf.wrappedText(assessment.text, 78, 349, 430, {
+    size: 10,
+    lineHeight: 15,
+    maxLines: 4,
+    color: [0.22, 0.29, 0.37],
+  });
+  const metadata = [
+    ["Corrida", run.id],
+    ["Inicio", formatDate(run.startedAt)],
+    ["Generado", formatDate(new Date().toISOString())],
+  ];
+  metadata.forEach(([label, value], index) => {
+    pdf.text(label, 50, 475 + index * 48, { size: 8, bold: true, color: [0.38, 0.46, 0.54] });
+    pdf.text(truncate(value, 72), 50, 492 + index * 48, { size: 11, bold: true });
+  });
+  pdf.footer(run);
+}
+
+function startSection(pdf, run, title, subtitle) {
+  pdf.newPage();
+  drawHeader(pdf, run, subtitle);
+  pdf.text(title, 34, 103, { size: 17, bold: true });
+}
+
+function drawSummarySection(pdf, run, counts) {
+  startSection(pdf, run, "Resumen ejecutivo", "Indicadores principales de la corrida");
+  const total = (run.tests || []).length;
+  const cases = new Set((run.tests || []).map((test) => test.caseId || test.id)).size;
+  const passRate = total ? Math.round((counts.passed / total) * 1000) / 10 : 0;
+  [
+    ["Casos", cases, [0.118, 0.439, 0.722]],
+    ["Ejecuciones", total, [0.047, 0.694, 0.706]],
+    ["Exitosas", counts.passed, [0.102, 0.608, 0.471]],
+    ["Fallidas", counts.failed, [0.937, 0.255, 0.38]],
+    ["Exito", `${passRate}%`, [0.486, 0.361, 0.898]],
+  ].forEach(([label, value, color], index) =>
+    drawMetric(pdf, 34 + index * 106, 145, 98, label, value, color));
+  const assessment = buildAssessment(counts, total);
+  pdf.fillRect(34, 235, 527, 155, [1, 1, 1], 10);
+  pdf.fillRect(34, 235, 8, 155, assessment.color, 4);
+  pdf.text(assessment.title, 62, 264, { size: 15, bold: true, color: assessment.color });
+  pdf.wrappedText(assessment.text, 62, 302, 460, {
+    size: 10,
+    lineHeight: 15,
+    maxLines: 5,
+    color: [0.22, 0.29, 0.37],
+  });
+  pdf.footer(run);
+}
+
+function drawStatusSection(pdf, run, counts) {
+  startSection(pdf, run, "Distribucion por estado", "Clasificacion automatica y manual");
+  const total = (run.tests || []).length;
+  let cursor = 34;
+  STATUS_DEFINITIONS.forEach(([key, , color]) => {
+    const width = total ? (counts[key] / total) * 527 : 0;
+    if (width > 0) pdf.fillRect(cursor, 155, width, 24, color);
+    cursor += width;
+  });
+  pdf.strokeRect(34, 155, 527, 24, [0.8, 0.85, 0.9], 0.6);
+  STATUS_DEFINITIONS.forEach(([key, label, color], index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    const x = 34 + column * 268;
+    const top = 220 + row * 82;
+    pdf.fillRect(x, top, 250, 62, [1, 1, 1], 8);
+    pdf.fillRect(x + 16, top + 18, 12, 12, color, 6);
+    pdf.text(label, x + 42, top + 14, { size: 9, bold: true });
+    pdf.text(`${counts[key]} (${total ? Math.round((counts[key] / total) * 100) : 0}%)`, x + 42, top + 34, {
+      size: 13,
+      bold: true,
+    });
+  });
+  pdf.footer(run);
+}
+
+function drawContextSection(pdf, run) {
+  startSection(pdf, run, "Contexto de la corrida", "Informacion tecnica de la ejecucion");
+  const rows = [
+    ["Corrida", run.id], ["Ambiente", run.environment], ["Inicio", formatDate(run.startedAt)],
+    ["Duracion", formatDuration(run.durationMs)], ["Navegador", `${run.browser?.name || "-"} ${run.browser?.version || ""}`.trim()],
+    ["Cypress", run.cypressVersion || "-"], ["Tags", run.tagExpression || "Sin filtro de tags"],
+    ["Rama", run.source?.branch || "-"], ["Commit", run.source?.commit || "-"],
+    ["Pipeline", run.source?.pipelineId || "-"],
+  ];
+  rows.forEach(([label, value], index) => {
+    const top = 148 + index * 55;
+    if (index % 2 === 0) pdf.fillRect(34, top, 527, 50, [1, 1, 1], 6);
+    pdf.text(label, 50, top + 13, { size: 8, bold: true, color: [0.38, 0.46, 0.54] });
+    pdf.text(truncate(value, 73), 165, top + 13, { size: 9, bold: true });
+  });
+  pdf.footer(run);
+}
+
+function featureRows(run) {
+  const groups = new Map();
+  for (const test of run.tests || []) {
+    const name = test.feature || test.suite || String(test.spec || "Sin Feature").split("/").at(-1);
+    if (!groups.has(name)) groups.set(name, { name, total: 0, passed: 0, failed: 0, classified: 0 });
+    const group = groups.get(name);
+    const status = effectiveStatus(run, test);
+    group.total += 1;
+    if (status === "passed") group.passed += 1;
+    else if (status === "failed") group.failed += 1;
+    else group.classified += 1;
+  }
+  return [...groups.values()].sort((left, right) => right.failed - left.failed || left.name.localeCompare(right.name));
+}
+
+function drawFeaturesSection(pdf, run) {
+  startSection(pdf, run, "Resultados por Feature", "Cobertura y estado de la corrida actual");
+  const rows = featureRows(run);
+  pdf.fillRect(34, 145, 527, 27, [0.063, 0.176, 0.286], 5);
+  ["Feature", "Total", "Exitosas", "Fallidas", "Clasificadas"].forEach((label, index) =>
+    pdf.text(label, [45, 350, 398, 455, 510][index], 154, { size: 7.5, bold: true, color: [1, 1, 1] }));
+  rows.slice(0, 16).forEach((row, index) => {
+    const top = 172 + index * 36;
+    if (index % 2 === 0) pdf.fillRect(34, top, 527, 36, [0.94, 0.96, 0.98]);
+    [truncate(row.name, 53), row.total, row.passed, row.failed, row.classified].forEach((value, valueIndex) =>
+      pdf.text(value, [45, 350, 398, 455, 510][valueIndex], top + 12, { size: 7.7, bold: valueIndex === 0 }));
+  });
+  if (rows.length > 16) pdf.text(`Se muestran 16 de ${rows.length} Features.`, 34, 765, { size: 8, bold: true });
+  pdf.footer(run);
+}
+
+function drawComparisonSection(pdf, run) {
+  startSection(pdf, run, "Comparacion con la corrida anterior", "Cambios del mismo ambiente");
+  const trends = run.trends?.runs || [];
+  const currentIndex = trends.findIndex((item) => item.id === run.id);
+  const previous = currentIndex > 0 ? trends[currentIndex - 1] : trends.at(-2);
+  const current = trends.find((item) => item.id === run.id) || trends.at(-1);
+  if (!previous || !current) {
+    pdf.fillRect(34, 155, 527, 82, [1, 1, 1], 9);
+    pdf.text("Todavia no hay otra corrida comparable en este ambiente.", 52, 187, { size: 10, bold: true });
+  } else {
+    const classified = (item) => ["environment_error", "precondition_error", "outdated_test", "reported"]
+      .reduce((sum, key) => sum + Number(item[key] || 0), 0);
+    const metrics = [
+      ["Exitosas", Number(current.passed || 0), Number(previous.passed || 0)],
+      ["Fallidas", Number(current.failed || 0), Number(previous.failed || 0)],
+      ["Clasificadas", classified(current), classified(previous)],
+      ["Duracion (ms)", Number(current.duration_ms || run.durationMs), Number(previous.duration_ms || 0)],
+    ];
+    metrics.forEach(([label, value, oldValue], index) => {
+      const top = 155 + index * 105;
+      pdf.fillRect(34, top, 527, 84, [1, 1, 1], 9);
+      pdf.text(label, 52, top + 19, { size: 9, bold: true, color: [0.38, 0.46, 0.54] });
+      pdf.text(String(value), 52, top + 42, { size: 18, bold: true });
+      pdf.text(`Anterior: ${oldValue}`, 240, top + 42, { size: 10 });
+      const delta = value - oldValue;
+      pdf.text(`Variacion: ${delta > 0 ? "+" : ""}${delta}`, 390, top + 42, { size: 10, bold: true });
+    });
+  }
+  pdf.footer(run);
+}
+
+function drawHistorySection(pdf, run) {
+  startSection(pdf, run, "Historial reciente", "Ultimas ejecuciones del ambiente");
+  const rows = (run.trends?.runs || []).slice(-12).reverse();
+  pdf.fillRect(34, 145, 527, 27, [0.063, 0.176, 0.286], 5);
+  ["Fecha", "Total", "Exitosas", "Fallidas", "% exito"].forEach((label, index) =>
+    pdf.text(label, [45, 335, 390, 455, 518][index], 154, { size: 7.5, bold: true, color: [1, 1, 1] }));
+  rows.forEach((row, index) => {
+    const top = 172 + index * 43;
+    const total = Number(row.total || 0);
+    const values = [formatDate(row.started_at), total, Number(row.passed || 0), Number(row.failed || 0), `${total ? Math.round((Number(row.passed || 0) / total) * 100) : 0}%`];
+    if (index % 2 === 0) pdf.fillRect(34, top, 527, 43, [0.94, 0.96, 0.98]);
+    values.forEach((value, valueIndex) => pdf.text(truncate(value, 37), [45, 335, 390, 455, 518][valueIndex], top + 15, { size: 7.7, bold: valueIndex === 4 }));
+  });
+  pdf.footer(run);
+}
+
+function drawTestRankingSection(pdf, run, options) {
+  startSection(pdf, run, options.title, options.subtitle);
+  const rows = options.rows || [];
+  if (!rows.length) {
+    pdf.fillRect(34, 150, 527, 80, [0.886, 0.965, 0.961], 9);
+    pdf.text(options.empty, 52, 181, { size: 10, bold: true, color: [0.02, 0.38, 0.42] });
+  } else {
+    rows.slice(0, 14).forEach((item, index) => {
+      const top = 150 + index * 43;
+      if (index % 2 === 0) pdf.fillRect(34, top, 527, 43, [1, 1, 1], 6);
+      pdf.text(truncate(item.title || item.originalTitle || "Prueba", 67), 48, top + 10, { size: 8, bold: true });
+      pdf.text(truncate(options.detail(item), 78), 48, top + 26, { size: 7.2, color: [0.38, 0.46, 0.54] });
+    });
+  }
+  pdf.footer(run);
+}
+
+function drawRecommendationSection(pdf, run, counts) {
+  startSection(pdf, run, "Recomendacion y pendientes", "Decision ejecutiva y seguimiento necesario");
+  const assessment = buildAssessment(counts, (run.tests || []).length);
+  pdf.fillRect(34, 150, 527, 170, [1, 1, 1], 10);
+  pdf.fillRect(34, 150, 8, 170, assessment.color, 4);
+  pdf.text(assessment.title, 60, 180, { size: 16, bold: true, color: assessment.color });
+  pdf.wrappedText(assessment.text, 60, 218, 465, { size: 10, lineHeight: 15, maxLines: 5 });
+  const failed = (run.tests || []).filter((test) => effectiveStatus(run, test) === "failed");
+  const missingComments = failed.filter((test) => !run.annotations?.[test.id]?.comment).length;
+  const missingTickets = failed.filter((test) => !run.annotations?.[test.id]?.ticket).length;
+  [
+    ["Fallos sin comentario", missingComments, [0.961, 0.62, 0.043]],
+    ["Fallos sin ticket", missingTickets, [0.937, 0.255, 0.38]],
+  ].forEach(([label, value, color], index) => drawMetric(pdf, 34 + index * 268, 370, 250, label, value, color));
+  pdf.footer(run);
+}
+
+function technicalLines(test) {
+  const error = String(test.error?.message || test.error?.stack || "Sin error registrado");
+  const exchanges = Array.isArray(test.http) ? test.http : [];
+  const content = [
+    `ERROR\n${error}`,
+    ...exchanges.flatMap((exchange, index) => [
+      `REQUEST ${index + 1}\n${JSON.stringify(exchange.request || {}, null, 2)}`,
+      `RESPUESTA ${index + 1}\n${JSON.stringify(exchange.response || {}, null, 2)}`,
+    ]),
+  ].join("\n\n");
+  return content.split("\n").flatMap((line) => wrapText(line || " ", 105));
+}
+
+function drawTechnicalSection(pdf, run) {
+  const failed = (run.tests || []).filter((test) => effectiveStatus(run, test) === "failed");
+  if (!failed.length) {
+    startSection(pdf, run, "Detalle tecnico de fallas", "Errores, requests y respuestas");
+    pdf.text("No existen fallos funcionales para detallar.", 50, 160, { size: 10, bold: true });
+    pdf.footer(run);
+    return;
+  }
+  for (const test of failed) {
+    const lines = technicalLines(test);
+    for (let offset = 0; offset < lines.length; offset += 43) {
+      startSection(pdf, run, "Detalle tecnico de fallas", `Datos sin ofuscar - ${truncate(test.title, 55)}`);
+      pdf.fillRect(34, 137, 527, 42, [1, 0.95, 0.86], 7);
+      pdf.text("ADVERTENCIA: esta seccion puede contener credenciales y datos sensibles.", 48, 152, {
+        size: 8,
+        bold: true,
+        color: [0.55, 0.29, 0.02],
+      });
+      lines.slice(offset, offset + 43).forEach((line, index) =>
+        pdf.text(line, 42, 196 + index * 13.2, { size: 7.1, color: [0.15, 0.22, 0.3] }));
+      pdf.footer(run);
+    }
+  }
+}
+
+function buildExecutivePdf(run, options = {}) {
   if (!run || !Array.isArray(run.tests)) {
     throw new Error("La corrida no contiene resultados exportables.");
   }
+  const requested = Array.isArray(options.sections) ? options.sections : DEFAULT_PDF_SECTIONS;
+  const sections = new Set(requested.filter((section) => PDF_SECTIONS.includes(section)));
+  if (!sections.size) throw new Error("Selecciona al menos una seccion para exportar.");
   const pdf = new PdfCanvas();
   const counts = buildStatusSummary(run);
-  drawPageOne(pdf, run, counts);
-  drawIssuesPage(pdf, run);
-  drawQualityPage(pdf, run, counts);
+  drawCover(pdf, run);
+  if (sections.has("summary")) drawSummarySection(pdf, run, counts);
+  if (sections.has("statusDistribution")) drawStatusSection(pdf, run, counts);
+  if (sections.has("runContext")) drawContextSection(pdf, run);
+  if (sections.has("features")) drawFeaturesSection(pdf, run);
+  if (sections.has("issues")) drawIssuesPage(pdf, run);
+  if (sections.has("previousComparison")) drawComparisonSection(pdf, run);
+  if (sections.has("recentHistory")) drawHistorySection(pdf, run);
+  if (sections.has("flaky")) drawTestRankingSection(pdf, run, {
+    title: "Pruebas inestables",
+    subtitle: "Casos que pasaron luego de uno o mas reintentos",
+    rows: (run.tests || []).filter((test) => test.flaky),
+    empty: "No se detectaron pruebas inestables en la corrida actual.",
+    detail: (test) => `${test.retries || 0} reintentos - ${test.spec || ""}`,
+  });
+  if (sections.has("recurrentFailures")) drawTestRankingSection(pdf, run, {
+    title: "Fallos recurrentes",
+    subtitle: "Pruebas con fallos repetidos en el historial",
+    rows: run.analytics?.recurrentFailures || [],
+    empty: "No se detectaron fallos recurrentes en el historial disponible.",
+    detail: (test) => `${test.failures || test.failed || 0} fallos de ${test.executions || 0} ejecuciones - Jira ${test.jira_id || "-"}`,
+  });
+  if (sections.has("slowTests")) drawTestRankingSection(pdf, run, {
+    title: "Pruebas mas lentas",
+    subtitle: "Ranking historico por duracion",
+    rows: run.analytics?.slowest || [],
+    empty: "No hay informacion suficiente para calcular pruebas lentas.",
+    detail: (test) => `Promedio ${formatDuration(test.average_duration || test.duration_ms || test.durationMs)} - ${test.spec || ""}`,
+  });
+  if (sections.has("recommendation")) drawRecommendationSection(pdf, run, counts);
+  if (sections.has("technicalFailures")) drawTechnicalSection(pdf, run);
   return pdf.finish(run);
 }
 
 module.exports = {
   STATUS_DEFINITIONS,
+  PDF_SECTIONS,
+  DEFAULT_PDF_SECTIONS,
   buildExecutivePdf,
   buildStatusSummary,
 };

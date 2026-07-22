@@ -39,6 +39,20 @@
   const otherErrorStatuses = new Set([
     ...Object.keys(customErrorStatuses),
   ]);
+  const pdfSections = [
+    ["summary", "Resumen ejecutivo", "Indicadores principales y evaluación general.", true],
+    ["statusDistribution", "Distribución por estado", "Resultados automáticos y clasificaciones manuales.", true],
+    ["runContext", "Contexto de la corrida", "Ambiente, fecha, navegador, tags, rama y pipeline.", true],
+    ["features", "Resultados por Feature", "Totales y estados agrupados por Feature.", true],
+    ["issues", "Problemas que requieren seguimiento", "Fallos, Jira, comentarios y tickets asociados.", true],
+    ["previousComparison", "Comparación con la corrida anterior", "Variaciones de resultados y duración.", true],
+    ["recentHistory", "Historial reciente", "Últimas ejecuciones del mismo ambiente.", true],
+    ["flaky", "Pruebas inestables", "Casos que pasaron después de uno o más reintentos.", true],
+    ["recurrentFailures", "Fallos recurrentes", "Pruebas con fallos repetidos en el historial.", true],
+    ["slowTests", "Pruebas más lentas", "Ranking histórico de pruebas por duración.", false],
+    ["recommendation", "Recomendación y pendientes", "Evaluación final, fallos sin comentario y sin ticket.", true],
+    ["technicalFailures", "Detalle técnico de fallas", "Error, request y respuesta sin ocultar valores.", false],
+  ];
 
   function readLocalJson(key, fallback) {
     try {
@@ -2369,16 +2383,84 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function downloadExecutivePdf() {
-    const button = document.getElementById("export-executive-pdf");
+  function openPdfExportModal() {
+    const dialog = document.getElementById("pdf-export-modal");
+    if (!dialog) return;
+    dialog.innerHTML = `<div class="pdfExportShell">
+      <header>
+        <div>
+          <p class="eyebrow">Exportación configurable</p>
+          <h2>Armar PDF ejecutivo</h2>
+          <p>Elegí qué información querés incluir. La portada y la identificación de la corrida se agregan siempre.</p>
+        </div>
+        <button type="button" class="modalCloseButton" data-close-pdf aria-label="Cerrar">×</button>
+      </header>
+      <div class="pdfExportToolbar">
+        <span data-pdf-selection-count></span>
+        <div>
+          <button type="button" data-pdf-recommended>Usar selección recomendada</button>
+          <button type="button" data-pdf-all>Seleccionar todas</button>
+        </div>
+      </div>
+      <div class="pdfSectionGrid">
+        ${pdfSections.map(([key, label, description, recommended]) => `<label class="pdfSectionOption ${key === "technicalFailures" ? "sensitive" : ""}">
+          <input type="checkbox" name="pdf-section" value="${escapeHtml(key)}" ${recommended ? "checked" : ""} />
+          <span class="pdfSectionCheck" aria-hidden="true">✓</span>
+          <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span>
+          ${key === "technicalFailures" ? '<em>Puede contener credenciales y datos sensibles.</em>' : ""}
+        </label>`).join("")}
+      </div>
+      <footer>
+        <span class="pdfExportFeedback" data-pdf-feedback role="status"></span>
+        <button type="button" class="secondaryButton" data-close-pdf>Cancelar</button>
+        <button type="button" class="primaryButton" data-generate-pdf>Generar PDF</button>
+      </footer>
+    </div>`;
+
+    const checkboxes = [...dialog.querySelectorAll('input[name="pdf-section"]')];
+    const generateButton = dialog.querySelector("[data-generate-pdf]");
+    const updateSelection = () => {
+      const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
+      dialog.querySelector("[data-pdf-selection-count]").textContent =
+        `${selected} de ${checkboxes.length} secciones seleccionadas`;
+      generateButton.disabled = selected === 0;
+    };
+    checkboxes.forEach((checkbox) => checkbox.addEventListener("change", updateSelection));
+    dialog.querySelectorAll("[data-close-pdf]").forEach((button) =>
+      button.addEventListener("click", () => dialog.close()));
+    dialog.querySelector("[data-pdf-recommended]").addEventListener("click", () => {
+      checkboxes.forEach((checkbox) => {
+        checkbox.checked = Boolean(pdfSections.find(([key]) => key === checkbox.value)?.[3]);
+      });
+      updateSelection();
+    });
+    dialog.querySelector("[data-pdf-all]").addEventListener("click", () => {
+      checkboxes.forEach((checkbox) => { checkbox.checked = true; });
+      updateSelection();
+    });
+    generateButton.addEventListener("click", async () => {
+      const selected = checkboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+      const feedback = dialog.querySelector("[data-pdf-feedback]");
+      feedback.textContent = "";
+      const downloaded = await downloadExecutivePdf(selected, generateButton);
+      if (downloaded) dialog.close();
+      else feedback.textContent = "No se pudo generar el PDF. Verificá que Elmulo Serve siga activo.";
+    });
+    updateSelection();
+    dialog.showModal();
+  }
+
+  async function downloadExecutivePdf(sections, triggerButton) {
+    const button = triggerButton || document.getElementById("export-executive-pdf");
     if (!button || button.disabled) return;
     const originalLabel = button.innerHTML;
     button.disabled = true;
     button.innerHTML = "<span aria-hidden=\"true\">↓</span> Generando PDF...";
     button.removeAttribute("title");
+    const sectionQuery = encodeURIComponent(sections.join(","));
     const candidates = [...new Set([
-      new URL("/api/export/executive.pdf", window.location.href).href,
-      "http://127.0.0.1:4178/api/export/executive.pdf",
+      new URL(`/api/export/executive.pdf?sections=${sectionQuery}`, window.location.href).href,
+      `http://127.0.0.1:4178/api/export/executive.pdf?sections=${sectionQuery}`,
     ])];
     let lastError = null;
 
@@ -2412,21 +2494,18 @@
         link.remove();
         URL.revokeObjectURL(downloadUrl);
         button.innerHTML = "<span aria-hidden=\"true\">✓</span> PDF descargado";
-        window.setTimeout(() => {
-          if (button.isConnected) {
-            button.innerHTML = originalLabel;
-            button.disabled = false;
-          }
-        }, 1800);
-        return;
+        button.innerHTML = originalLabel;
+        button.disabled = false;
+        return true;
       } catch (error) {
         lastError = error;
       }
     }
 
     button.innerHTML = "<span aria-hidden=\"true\">!</span> No se pudo exportar";
-    button.title = `${lastError?.message || "Error desconocido"} Abrí Elmulo mediante yarn elmulo:v2:serve.`;
+    button.title = `${lastError?.message || "Error desconocido"} Abrí Elmulo mediante yarn elmulo:serve.`;
     button.disabled = false;
+    return false;
   }
 
   function sidebarMarkup() {
@@ -2496,7 +2575,7 @@
     });
     document.getElementById("export-executive-pdf")?.addEventListener(
       "click",
-      downloadExecutivePdf,
+      openPdfExportModal,
     );
   }
 
@@ -2761,7 +2840,8 @@
     </div>
     <dialog id="test-history-modal" class="testHistoryModal" aria-label="Historial de estados de la prueba"></dialog>
     <dialog id="reuse-confirmation-modal" class="reuseConfirmationModal" aria-label="Confirmar reutilización de estado"></dialog>
-    <dialog id="bulk-confirmation-modal" class="reuseConfirmationModal" aria-label="Confirmar modificación masiva"></dialog>`;
+    <dialog id="bulk-confirmation-modal" class="reuseConfirmationModal" aria-label="Confirmar modificación masiva"></dialog>
+    <dialog id="pdf-export-modal" class="pdfExportModal" aria-label="Seleccionar secciones del PDF ejecutivo"></dialog>`;
 
     document.getElementById("search").addEventListener("input", (event) => {
       state.search = event.target.value;

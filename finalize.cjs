@@ -434,7 +434,7 @@ function persistRun(database, run) {
         cypressVersion: run.cypressVersion || "",
         system: run.system || {},
         source: run.source || {},
-        reporterVersion: "2.0.0-beta.2",
+        reporterVersion: "2.0.0-beta.3",
       }),
     ],
   );
@@ -906,7 +906,7 @@ async function finalizeRun(options = {}) {
   if (!run) throw new Error(`No se encontró ${rawPath}`);
 
   run.schemaVersion = DATABASE_SCHEMA_VERSION;
-  run.reporterVersion = "2.0.0-beta.2";
+  run.reporterVersion = "2.0.0-beta.3";
   run.lifecycle = run.lifecycle || "completed";
   run.source = run.source || {
     branch: process.env.CI_COMMIT_REF_NAME || "",
