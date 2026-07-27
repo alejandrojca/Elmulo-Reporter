@@ -3941,11 +3941,19 @@ pre {
 .appFrame {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .workspaceShell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
   min-width: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -4197,9 +4205,14 @@ pre {
 }
 
 .appShell {
+  height: 100%;
   margin: 0 auto;
   max-width: 1600px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 1.5rem 2rem 4rem;
+  width: 100%;
 }
 
 .workspaceView[hidden] {

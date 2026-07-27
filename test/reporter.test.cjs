@@ -1017,6 +1017,18 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(stylesSource, /\.historyEntry\.currentExecution/);
   assert.match(
     stylesSource,
+    /\.appFrame[\s\S]*?height:\s*100dvh;[\s\S]*?overflow:\s*hidden;/,
+  );
+  assert.match(
+    stylesSource,
+    /\.workspaceShell[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?overflow:\s*hidden;/,
+  );
+  assert.match(
+    stylesSource,
+    /\.appShell[\s\S]*?overflow-y:\s*auto;[\s\S]*?overscroll-behavior-y:\s*contain;/,
+  );
+  assert.match(
+    stylesSource,
     /html\[data-theme="dark"\] \.historyEntry > header \.currentExecutionBadge/,
   );
   assert.match(
