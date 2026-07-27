@@ -2686,19 +2686,6 @@ html[data-density="dense"] .testRows {
   margin-top: 0.2rem;
 }
 
-.pdfSectionOption em {
-  color: #9a4b08;
-  font-size: 0.7rem;
-  font-style: normal;
-  font-weight: 800;
-  grid-column: 2;
-}
-
-.pdfSectionOption.sensitive {
-  background: #fff9eb;
-  border-color: #f4dca7;
-}
-
 .pdfExportShell > footer {
   border-top: 1px solid var(--pw-gray-200);
   justify-content: flex-end;
@@ -2741,14 +2728,6 @@ html[data-theme="dark"] .pdfSectionOption:has(input:checked) {
   border-color: #62a8f4;
 }
 
-html[data-theme="dark"] .pdfSectionOption.sensitive {
-  background: #302817;
-  border-color: #80652c;
-}
-
-html[data-theme="dark"] .pdfSectionOption em {
-  color: #f5c56b;
-}
 
 @media (max-width: 720px) {
   .pdfSectionGrid {

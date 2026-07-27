@@ -141,7 +141,7 @@ async function serveReport(options = {}) {
           run.analytics = buildQualityAnalytics(database, run.environment);
           database.close();
         }
-        const pdf = buildExecutivePdf(run, { sections: requestedSections });
+        const pdf = await buildExecutivePdf(run, { sections: requestedSections });
         const environment = String(run.environment || "ambiente")
           .toLowerCase()
           .replace(/[^a-z0-9_-]/g, "");

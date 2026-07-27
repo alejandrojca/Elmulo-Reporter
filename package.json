@@ -34,6 +34,7 @@
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
+    "pdfkit": "0.17.2",
     "sql.js": "1.13.0"
   },
   "peerDependencies": {
@@ -55,5 +56,9 @@
   "bugs": {
     "url": "https://github.com/alejandrojca/Elmulo-Reporter/issues"
   },
-  "homepage": "https://github.com/alejandrojca/Elmulo-Reporter#readme"
+  "homepage": "https://github.com/alejandrojca/Elmulo-Reporter#readme",
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.100",
+    "pdfjs-dist": "^4.10.38"
+  }
 }

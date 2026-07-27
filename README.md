@@ -312,20 +312,14 @@ y la numeración de páginas se incluyen siempre.
 
 La selección recomendada incluye resumen, distribución por estado, contexto,
 Features, problemas, comparación, historial, pruebas inestables, fallos
-recurrentes y recomendación. Las pruebas más lentas y el detalle técnico se
-encuentran desmarcados inicialmente.
+recurrentes y recomendación. La sección de pruebas más lentas se encuentra
+desmarcada inicialmente.
 
 Las secciones ejecutivas se distribuyen en un flujo continuo: una sección puede
 comenzar en el espacio disponible de la página anterior y las tablas se dividen
 solo cuando es necesario. De esta forma, seleccionar o quitar secciones no crea
 una página independiente por cada bloque ni deja páginas finales con una única
-fila. El detalle técnico conserva su paginación propia para mantener juntos el
-error, el request y la respuesta de cada prueba.
 
-La opción **Detalle técnico de fallas** incorpora errores, requests y respuestas
-sin ocultar valores. El PDF resultante puede contener tokens, credenciales,
-cookies, datos de pago u otra información sensible, por lo que debe revisarse
-antes de compartirlo.
 
 El puerto predeterminado es `4178`. Puede configurarse mediante
 `ELMULO_PORT`. La salida puede cambiarse con `ELMULO_OUTPUT_DIR`; el plugin y

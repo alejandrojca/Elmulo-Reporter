@@ -51,7 +51,6 @@
     ["recurrentFailures", "Fallos recurrentes", "Pruebas con fallos repetidos en el historial.", true],
     ["slowTests", "Pruebas más lentas", "Ranking histórico de pruebas por duración.", false],
     ["recommendation", "Recomendación y pendientes", "Evaluación final, fallos sin comentario y sin ticket.", true],
-    ["technicalFailures", "Detalle técnico de fallas", "Error, request y respuesta sin ocultar valores.", false],
   ];
 
   function readLocalJson(key, fallback) {
@@ -2403,11 +2402,10 @@
         </div>
       </div>
       <div class="pdfSectionGrid">
-        ${pdfSections.map(([key, label, description, recommended]) => `<label class="pdfSectionOption ${key === "technicalFailures" ? "sensitive" : ""}">
+        ${pdfSections.map(([key, label, description, recommended]) => `<label class="pdfSectionOption">
           <input type="checkbox" name="pdf-section" value="${escapeHtml(key)}" ${recommended ? "checked" : ""} />
           <span class="pdfSectionCheck" aria-hidden="true">✓</span>
           <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span>
-          ${key === "technicalFailures" ? '<em>Puede contener credenciales y datos sensibles.</em>' : ""}
         </label>`).join("")}
       </div>
       <footer>

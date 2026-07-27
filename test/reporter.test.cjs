@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const { createCanvas } = require("@napi-rs/canvas");
 const { normalizeCypressResults } = require("../core.cjs");
 const {
   buildTrends,
@@ -359,7 +360,47 @@ test("consolida la calidad histórica usando la identidad canónica de Jira", as
   database.close();
 });
 
-test("genera un PDF ejecutivo modular con secciones seleccionables", () => {
+async function inspectPdf(pdf) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const document = await pdfjs.getDocument({
+    data: new Uint8Array(pdf),
+    disableFontFace: true,
+    isEvalSupported: false,
+    useSystemFonts: false,
+  }).promise;
+  const pages = [];
+  const structures = [];
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const content = await page.getTextContent();
+    pages.push(content.items.map((item) => item.str).join(" "));
+    structures.push(await page.getStructTree());
+  }
+  return {
+    document,
+    metadata: await document.getMetadata(),
+    pages,
+    structures,
+    text: pages.join("\n"),
+  };
+}
+
+async function renderPdfPages(document) {
+  const rendered = [];
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: 0.35 });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    await page.render({
+      canvasContext: canvas.getContext("2d"),
+      viewport,
+    }).promise;
+    rendered.push(canvas.toBuffer("image/png"));
+  }
+  return rendered;
+}
+
+test("genera un PDF ejecutivo accesible y modular con secciones seleccionables", async () => {
   const run = buildRun();
   enrichRunTests(run);
   run.annotations = {};
@@ -375,22 +416,61 @@ test("genera un PDF ejecutivo modular con secciones seleccionables", () => {
       failed: 0,
     }],
   };
-  const pdf = buildExecutivePdf(run);
+  const pdf = await buildExecutivePdf(run);
   const source = pdf.toString("latin1");
-  assert.equal(pdf.subarray(0, 8).toString("ascii"), "%PDF-1.4");
-  assert.match(source, /\/Count 4/);
-  assert.match(source, /Informe ejecutivo de calidad/);
-  assert.match(source, /Comparacion con la corrida anterior/);
+  const inspected = await inspectPdf(pdf);
+  assert.equal(pdf.subarray(0, 8).toString("ascii"), "%PDF-1.5");
+  assert.match(source, /\/StructTreeRoot/);
+  assert.match(source, /\/MarkInfo/);
+  assert.match(source, /\/Lang \(es-AR\)/);
+  assert.match(source, /\/FontFile2/);
+  assert.match(source, /\/ToUnicode/);
+  assert.match(source, /pdfuaid:part/);
+  assert.equal(inspected.metadata.info.Title.includes("Informe ejecutivo de calidad"), true);
+  assert.equal(inspected.metadata.info.Author, "Elmulo Reporter");
+  assert.match(inspected.text, /Informe ejecutivo de calidad/);
+  assert.match(inspected.text, /Comparación con la corrida anterior/);
+  assert.equal(inspected.structures.some(Boolean), true);
+  const renderedPages = await renderPdfPages(inspected.document);
+  assert.equal(renderedPages.length, inspected.document.numPages);
+  assert.equal(renderedPages.every((image) => image.subarray(1, 4).toString("ascii") === "PNG"), true);
+  assert.equal(renderedPages.every((image) => image.length > 1_000), true);
 
-  const selectedPdf = buildExecutivePdf(run, { sections: ["summary"] });
-  const selectedSource = selectedPdf.toString("latin1");
-  assert.match(selectedSource, /\/Count 2/);
-  assert.match(selectedSource, /Resumen ejecutivo/);
-  assert.doesNotMatch(selectedSource, /Comparacion con la corrida anterior/);
-  assert.throws(
-    () => buildExecutivePdf(run, { sections: [] }),
-    /Selecciona al menos una seccion/,
+  const selectedPdf = await buildExecutivePdf(run, { sections: ["summary"] });
+  const selected = await inspectPdf(selectedPdf);
+  assert.equal(selected.document.numPages, 2);
+  assert.match(selected.text, /Resumen ejecutivo/);
+  assert.doesNotMatch(selected.text, /Comparación con la corrida anterior/);
+  await assert.rejects(
+    buildExecutivePdf(run, { sections: [] }),
+    /Seleccioná al menos una sección/,
   );
+});
+
+test("el PDF conserva Unicode, contenido largo y deltas de duración negativos", async () => {
+  const run = buildRun();
+  enrichRunTests(run);
+  const longMarker = "RUTA_COMPLETA_";
+  run.projectName = "Calidad Ñandú — São Paulo";
+  run.tests[0].status = "failed";
+  run.tests[0].title = `${longMarker}${"segmento-contenido-".repeat(45)}FIN_RUTA`;
+  run.tests[0].originalTitle = run.tests[0].title;
+  run.trends = {
+    runs: [
+      { id: "anterior", started_at: "2026-07-22T10:00:00.000Z", passed: 0, failed: 1, duration_ms: 10_000 },
+      { id: run.id, started_at: run.startedAt, passed: 0, failed: 1, duration_ms: 2_000 },
+    ],
+  };
+  run.durationMs = 2_000;
+  const pdf = await buildExecutivePdf(run, {
+    sections: ["issues", "previousComparison"],
+  });
+  const inspected = await inspectPdf(pdf);
+  const normalized = inspected.text.replace(/\s+/g, "");
+  assert.match(inspected.text, /Calidad Ñandú — São Paulo/);
+  assert.match(normalized, new RegExp(`${longMarker}.*FIN_RUTA`));
+  assert.doesNotMatch(inspected.text, /RUTA_COMPLETA_[^\n]*\.\.\./);
+  assert.match(inspected.text, /−8 s vs\. anterior/);
 });
 
 test("configura la interfaz sin selección y con seguimiento de fallas", () => {
@@ -400,6 +480,10 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   );
   const stylesSource = fs.readFileSync(
     path.join(__dirname, "..", "assets", "app.css"),
+    "utf8",
+  );
+  const pdfSource = fs.readFileSync(
+    path.join(__dirname, "..", "executive-pdf.cjs"),
     "utf8",
   );
 
@@ -502,7 +586,8 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /function openPdfExportModal/);
   assert.match(appSource, /name="pdf-section"/);
   assert.match(appSource, /Usar selección recomendada/);
-  assert.match(appSource, /Puede contener credenciales y datos sensibles/);
+  assert.doesNotMatch(appSource, /technicalFailures|Detalle técnico de fallas|Puede contener credenciales y datos sensibles/);
+  assert.doesNotMatch(pdfSource, /technicalFailures|technicalLines|drawTechnicalSection|Detalle técnico de fallas/);
   assert.match(appSource, /sections=\$\{sectionQuery\}/);
   assert.match(stylesSource, /\.pdfExportModal/);
   assert.match(stylesSource, /\.pdfSectionGrid/);
