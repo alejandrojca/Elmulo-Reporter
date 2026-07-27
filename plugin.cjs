@@ -57,7 +57,7 @@ function registerElmuloReporter(on, config, options = {}) {
         "unknown",
       tagExpression: config.env?.TAGS || process.env.CYPRESS_TAGS || "",
       lifecycle: "running",
-      reporterVersion: "2.0.0-beta.7",
+      reporterVersion: "2.0.0-beta.8",
       execution: executionScript
         ? { runner: "npm", script: executionScript, args: executionArgs }
         : null,
