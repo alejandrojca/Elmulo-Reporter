@@ -42,13 +42,13 @@
   const pdfSections = [
     ["summary", "Resumen ejecutivo", "Indicadores principales y evaluación general.", true],
     ["statusDistribution", "Distribución por estado", "Resultados automáticos y clasificaciones manuales.", true],
-    ["runContext", "Contexto de la corrida", "Ambiente, fecha, navegador, tags, rama y pipeline.", true],
+    ["runContext", "Contexto de la corrida", "Ambiente, fecha, navegador, tags, rama y pipeline.", false],
     ["features", "Resultados por Feature", "Totales y estados agrupados por Feature.", true],
     ["issues", "Problemas que requieren seguimiento", "Fallos, Jira, comentarios y tickets asociados.", true],
-    ["previousComparison", "Comparación con la corrida anterior", "Variaciones de resultados y duración.", true],
-    ["recentHistory", "Historial reciente", "Últimas ejecuciones del mismo ambiente.", true],
-    ["flaky", "Pruebas inestables", "Casos que pasaron después de uno o más reintentos.", true],
-    ["recurrentFailures", "Fallos recurrentes", "Pruebas con fallos repetidos en el historial.", true],
+    ["previousComparison", "Comparación con la corrida anterior", "Variaciones de resultados y duración.", false],
+    ["recentHistory", "Historial reciente", "Últimas ejecuciones del mismo ambiente.", false],
+    ["flaky", "Pruebas inestables", "Casos que pasaron después de uno o más reintentos.", false],
+    ["recurrentFailures", "Fallos recurrentes", "Pruebas con fallos repetidos en el historial.", false],
     ["slowTests", "Pruebas más lentas", "Ranking histórico de pruebas por duración.", false],
     ["recommendation", "Recomendación y pendientes", "Evaluación final, fallos sin comentario y sin ticket.", true],
   ];
@@ -712,12 +712,25 @@
     </article>`;
   }
 
+  function failureMetric(total, deltaMarkup, breakdown, className = "") {
+    return `<article class="metricCard failed failedBreakdown ${className}">
+      <div class="failureMetricTotal">
+        <span>Fallidas</span>
+        <strong>${escapeHtml(total)}${deltaMarkup}</strong>
+      </div>
+      <dl class="failureMetricBreakdown" aria-label="Desglose de pruebas fallidas">
+        ${breakdown.map(([label, value, status]) => `<div class="${escapeHtml(status)}">
+          <dt>${escapeHtml(label)}</dt>
+          <dd>${escapeHtml(value)}</dd>
+        </div>`).join("")}
+      </dl>
+    </article>`;
+  }
+
   function summaryMarkup() {
     const effectiveStatuses = run.tests.map(effectiveTestStatus);
     const statusCount = (status) =>
       effectiveStatuses.filter((value) => value === status).length;
-    const otherErrorsCount = effectiveStatuses.filter((status) =>
-      otherErrorStatuses.has(status)).length;
     const activeClass = (status, baseClass = status) =>
       `${baseClass} ${state.status === status ? "activeFilter" : ""}`.trim();
     const previousRun = [...(run.trends?.runs || [])]
@@ -730,23 +743,30 @@
       return `<small class="metricDelta ${difference > 0 ? "up" : "down"}">${difference > 0 ? "+" : ""}${difference} vs. anterior</small>`;
     };
     const passedCount = statusCount("passed");
-    const failedCount = statusCount("failed");
-    const previousOtherErrors = previousRun
-      ? Number(previousRun.environment_error || 0) +
-        Number(previousRun.precondition_error || 0) +
-        Number(previousRun.outdated_test || 0) +
-        Number(previousRun.reported || 0)
-      : null;
+    const automaticFailures = run.tests.filter((test) => test.status === "failed");
+    const failedCount = automaticFailures.length;
+    const pendingFailures = automaticFailures.filter((test) =>
+      effectiveTestStatus(test) === "failed").length;
+    const reportedFailures = automaticFailures.filter((test) =>
+      effectiveTestStatus(test) === "reported").length;
+    const otherFailures = automaticFailures.filter((test) => {
+      const status = effectiveTestStatus(test);
+      return otherErrorStatuses.has(status) && status !== "reported";
+    }).length;
 
     return `
       ${metric("Casos", groupTestsByCase(run.tests).length)}
       ${metric("Ejecuciones", run.tests.length)}
       ${metric("Exitosas", `${passedCount}${delta(passedCount, previousRun?.passed)}`, activeClass("passed"))}
-      ${metric("Fallidas", `${failedCount}${delta(failedCount, previousRun?.failed)}`, activeClass("failed"))}
-      ${metric(
-        "Otros errores",
-        `${otherErrorsCount}${delta(otherErrorsCount, previousOtherErrors)}`,
-        activeClass("other_errors", "otherErrors"),
+      ${failureMetric(
+        failedCount,
+        delta(failedCount, previousRun?.failed),
+        [
+          ["Pendientes", pendingFailures, "pending"],
+          ["Reportadas", reportedFailures, "reported"],
+          ["Otros errores", otherFailures, "otherErrors"],
+        ],
+        activeClass("failed"),
       )}
       ${metric("Inestables", run.tests.filter((test) => test.flaky).length, "flaky")}
     `;
@@ -2764,16 +2784,18 @@
   function overviewLaunchpadMarkup() {
     const failed = run.tests.filter((test) => effectiveTestStatus(test) === "failed");
     const withoutComment = failed.filter((test) => !annotationFor(test).comment).length;
+    const launchIcon = (view) =>
+      `<img class="overviewLaunchIcon" src="assets/menu-icons/${escapeHtml(viewMetadata[view].icon)}" alt="">`;
     return `<section class="overviewLaunchpad" aria-labelledby="overview-next-title">
       <header>
         <div><p class="eyebrow">Explorar</p><h2 id="overview-next-title">Continuá el análisis</h2></div>
         <span>Cada área conserva el ambiente, los filtros y la prueba seleccionada.</span>
       </header>
       <div class="overviewLaunchGrid">
-        <button type="button" data-nav-view="executions"><span>▶</span><strong>Ejecuciones</strong><small>${escapeHtml(run.trends?.totalRuns || 0)} corridas disponibles</small></button>
-        <button type="button" data-nav-view="quality"><span>◇</span><strong>Calidad histórica</strong><small>Estabilidad, recurrencia y tiempos</small></button>
-        <button type="button" data-nav-view="analysis"><span>!</span><strong>Análisis pendiente</strong><small>${withoutComment} fallos sin comentario</small></button>
-        <button type="button" data-nav-view="tests"><span>☑</span><strong>Explorar pruebas</strong><small>${run.tests.length} ejecuciones en la corrida</small></button>
+        <button type="button" data-nav-view="executions">${launchIcon("executions")}<strong>Ejecuciones</strong><small>${escapeHtml(run.trends?.totalRuns || 0)} corridas disponibles</small></button>
+        <button type="button" data-nav-view="quality">${launchIcon("quality")}<strong>Calidad histórica</strong><small>Estabilidad, recurrencia y tiempos</small></button>
+        <button type="button" data-nav-view="analysis">${launchIcon("analysis")}<strong>Análisis pendiente</strong><small>${withoutComment} fallos sin comentario</small></button>
+        <button type="button" data-nav-view="tests">${launchIcon("tests")}<strong>Explorar pruebas</strong><small>${run.tests.length} ejecuciones en la corrida</small></button>
       </div>
     </section>`;
   }

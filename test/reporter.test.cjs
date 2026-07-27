@@ -1016,7 +1016,22 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /assets\/menu-icons\/\$\{escapeHtml\(item\.icon\)\}/);
   assert.match(appSource, /icon:\s*"summary\.png"/);
   assert.match(appSource, /icon:\s*"preferences\.png"/);
+  assert.match(appSource, /class="overviewLaunchIcon"/);
+  assert.match(appSource, /Desglose de pruebas fallidas/);
+  assert.match(appSource, /\["Pendientes", pendingFailures, "pending"\]/);
+  assert.match(appSource, /\["Reportadas", reportedFailures, "reported"\]/);
+  assert.match(appSource, /\["Otros errores", otherFailures, "otherErrors"\]/);
+  assert.match(
+    appSource,
+    /\["recommendation", "Recomendación y pendientes",[\s\S]*?, true\]/,
+  );
+  assert.match(
+    appSource,
+    /\["runContext", "Contexto de la corrida",[\s\S]*?, false\]/,
+  );
   assert.match(stylesSource, /\.sidebarIconImage/);
+  assert.match(stylesSource, /\.statusLegendItem:not\(\.empty\)/);
+  assert.match(stylesSource, /\.metricCard\.failedBreakdown/);
   assert.match(
     stylesSource,
     /\.sidebarLink\.active \.sidebarIconImage[\s\S]*?filter:/,

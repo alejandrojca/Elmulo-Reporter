@@ -264,6 +264,50 @@ button {
 .metricCard.flaky { --metric-color: var(--pw-warning); }
 .metricCard.otherErrors { --metric-color: #d18a00; }
 
+.metricCard.failedBreakdown {
+  display: grid;
+  gap: 0.9rem;
+  grid-column: span 2;
+  grid-template-columns: minmax(90px, 0.7fr) minmax(210px, 1.3fr);
+}
+
+.failureMetricTotal {
+  align-self: center;
+}
+
+.failureMetricBreakdown {
+  align-content: center;
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.failureMetricBreakdown > div {
+  --breakdown-color: var(--pw-danger);
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--breakdown-color) 62%, var(--pw-gray-200));
+  border-radius: 999px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25rem 0.55rem;
+}
+
+.failureMetricBreakdown .reported { --breakdown-color: var(--pw-blue-600); }
+.failureMetricBreakdown .otherErrors { --breakdown-color: var(--pw-warning); }
+
+.failureMetricBreakdown dt,
+.failureMetricBreakdown dd {
+  color: var(--pw-gray-700);
+  font-size: 0.68rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.failureMetricBreakdown dd {
+  color: var(--breakdown-color);
+  font-size: 0.82rem;
+}
+
 .metricCard.activeFilter {
   border-color: var(--metric-color, var(--pw-blue-700));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color, var(--pw-blue-700)) 18%, transparent);
@@ -368,6 +412,11 @@ button {
 
 .statusLegendItem.empty {
   opacity: 0.56;
+}
+
+.statusLegendItem:not(.empty) {
+  border-color: var(--status-color);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--status-color) 24%, transparent);
 }
 
 .statusLegendDot {
@@ -4344,10 +4393,11 @@ pre {
   transform: translateY(-1px);
 }
 
-.overviewLaunchGrid button > span {
-  color: var(--pw-teal);
-  font-size: 1.15rem;
-  font-weight: 800;
+.overviewLaunchIcon {
+  filter: brightness(0) saturate(100%) invert(61%) sepia(78%) saturate(623%) hue-rotate(132deg) brightness(87%) contrast(82%);
+  height: 24px;
+  object-fit: contain;
+  width: 24px;
 }
 
 .overviewLaunchGrid small {
