@@ -286,6 +286,48 @@ ELMULO_CAPTURE_HTTP=false npm run report-sandbox-ecommerce -- "@mtt"
 También puede configurarse `captureHttp: false` al llamar a
 `registerElmuloReporter`.
 
+### Reportar una falla en Jira
+
+La pestaña **Error** permite crear un defecto en Jira cuando el reporte se abre
+con `elmulo serve`. El comentario de la falla es obligatorio. Antes de enviar,
+Elmulo muestra una confirmación y arma la descripción con:
+
+- el escenario Gherkin ejecutado;
+- el error final y el paso fallido;
+- el request/response temporalmente asociado al fallo;
+- el comentario escrito por la persona que analiza la corrida.
+
+La integración está configurada por defecto para `FONLP06`, work type `Error` y
+`Tipo = Mantenimiento (IT4IT)`. Busca duplicados mediante una label estable. Si
+encuentra un defecto activo agrega un comentario; si todos los coincidentes
+están en una categoría Jira `done`, crea una recurrencia.
+
+Las credenciales nunca llegan al navegador. El servidor acepta cualquiera de
+estas configuraciones:
+
+```powershell
+$env:ELMULO_JIRA_EMAIL = "usuario@dominio.com"
+$env:ELMULO_JIRA_API_TOKEN = "<api-token>"
+npm run elmulo:serve
+```
+
+También puede leer el archivo local y gitignoreado
+`cypress/config/jira-credentials.ts` del proyecto Cypress. Para indicar otra
+ruta:
+
+```powershell
+$env:ELMULO_JIRA_CREDENTIALS_FILE = "C:\ruta\jira-credentials.ts"
+npm run elmulo:serve
+```
+
+Al crear o reutilizar el defecto, Elmulo cambia la prueba a `Reportado`, guarda
+la URL en **Ticket / bug report** y registra la operación en la auditoría
+SQLite.
+
+La evidencia HTTP se envía literalmente a Jira. No se ocultan credenciales,
+tokens, cookies ni datos de los cuerpos; esta política debe revisarse antes de
+usar la integración con información productiva.
+
 ## Comandos
 
 Los comandos se ejecutan desde la raíz del proyecto Cypress consumidor:

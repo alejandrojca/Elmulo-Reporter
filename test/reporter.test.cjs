@@ -23,6 +23,13 @@ const { registerElmuloReporter } = require("../plugin.cjs");
 const { buildExecutivePdf } = require("../executive-pdf.cjs");
 const { redactSecrets, sanitizeLogEntry } = require("../security.cjs");
 const {
+  buildExecutedGherkin,
+  defectFingerprint,
+  loadJiraConfig,
+  reportDefect,
+  selectFailureExchange,
+} = require("../jira.cjs");
+const {
   createRerunManager,
   normalizeRerunArgs,
   resolveNpmCli,
@@ -692,6 +699,147 @@ test("consolida la calidad histórica usando la identidad canónica de Jira", as
   database.close();
 });
 
+test("reconstruye Gherkin ejecutado y selecciona el intercambio asociado al fallo", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-jira-gherkin-"));
+  const spec = path.join("cypress", "e2e", "mtt.feature");
+  fs.mkdirSync(path.join(projectRoot, "cypress", "e2e"), { recursive: true });
+  fs.writeFileSync(path.join(projectRoot, spec), [
+    "Feature: MTT",
+    "",
+    "  @FONLP06-2152 @mtt",
+    "  Scenario: payment fails",
+    "    Given an amount is generated",
+    "    When the payment is sent",
+    "    Then the response is successful",
+  ].join("\n"));
+  const testResult = {
+    spec,
+    title: "payment fails",
+    status: "failed",
+    tags: ["@FONLP06-2152", "@mtt"],
+    steps: [
+      { index: 0, name: "an amount is generated", status: "passed" },
+      { index: 1, name: "the payment is sent", status: "passed" },
+      {
+        index: 2,
+        name: "the response is successful",
+        status: "failed",
+        startedAt: "2026-07-27T10:00:03.000Z",
+        finishedAt: "2026-07-27T10:00:03.100Z",
+        error: "expected 402 to equal 201",
+      },
+    ],
+    error: { message: "expected 402 to equal 201" },
+    http: [
+      { startedAt: "2026-07-27T10:00:01.000Z", request: { url: "/first" } },
+      { startedAt: "2026-07-27T10:00:02.000Z", request: { url: "/failure" } },
+      { startedAt: "2026-07-27T10:00:04.000Z", request: { url: "/later" } },
+    ],
+  };
+
+  assert.equal(
+    buildExecutedGherkin(projectRoot, testResult),
+    [
+      "@FONLP06-2152 @mtt",
+      "Scenario: payment fails",
+      "  Given an amount is generated",
+      "  When the payment is sent",
+      "  Then the response is successful",
+    ].join("\n"),
+  );
+  assert.equal(selectFailureExchange(testResult).request.url, "/failure");
+  assert.match(
+    defectFingerprint({ projectKey: "FONLP06" }, testResult),
+    /^elmulo-[a-f0-9]{12}$/,
+  );
+});
+
+test("reutiliza defectos activos y recrea los finalizados", async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  const response = (body, status = 200) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(body),
+  });
+  const config = {
+    ...loadJiraConfig(process.cwd(), {
+      ELMULO_JIRA_AUTHORIZATION: "Basic secreto",
+      ELMULO_JIRA_PROJECT: "FONLP06",
+    }),
+    projectId: "10133",
+  };
+  const context = {
+    config,
+    projectRoot: process.cwd(),
+    run: { environment: "qa", endedAt: "2026-07-27T10:00:05.000Z" },
+    test: {
+      id: "failed-test",
+      spec: "cypress/e2e/mtt.feature",
+      title: "MTT payment fails",
+      status: "failed",
+      tags: ["@FONLP06-2152", "@mtt"],
+      steps: [{ index: 0, name: "response is 201", status: "failed", error: "402 != 201" }],
+      error: { message: "expected 402 to equal 201" },
+      http: [{
+        startedAt: "2026-07-27T10:00:01.000Z",
+        request: { headers: { apikey: "visible" }, body: { account: "123" } },
+        response: { status: 402, body: { error: "invalid_card" } },
+      }],
+    },
+    comment: "La falla continúa.",
+  };
+
+  try {
+    global.fetch = async (url, options = {}) => {
+      calls.push({ url: String(url), options });
+      if (String(url).includes("/search/jql")) {
+        return response({
+          issues: [{
+            key: "FONLP06-2400",
+            fields: { status: { statusCategory: { key: "indeterminate" } } },
+          }],
+        });
+      }
+      if (String(url).endsWith("/comment")) return response({ id: "comment-1" }, 201);
+      throw new Error(`Llamada inesperada: ${url}`);
+    };
+    const reused = await reportDefect(context);
+    assert.equal(reused.action, "reused");
+    assert.equal(reused.issueKey, "FONLP06-2400");
+    assert.equal(calls.filter((call) => call.url.endsWith("/comment")).length, 1);
+
+    calls.length = 0;
+    global.fetch = async (url, options = {}) => {
+      calls.push({ url: String(url), options });
+      if (String(url).includes("/search/jql")) {
+        return response({
+          issues: [{
+            key: "FONLP06-2400",
+            fields: { status: { statusCategory: { key: "done" } } },
+          }],
+        });
+      }
+      if (String(url).endsWith("/myself")) return response({ accountId: "account-1" });
+      if (String(url).endsWith("/rest/api/3/issue")) {
+        return response({ id: "3000", key: "FONLP06-3000" }, 201);
+      }
+      throw new Error(`Llamada inesperada: ${url}`);
+    };
+    const recreated = await reportDefect(context);
+    assert.equal(recreated.action, "recreated");
+    assert.equal(recreated.previousIssueKey, "FONLP06-2400");
+    const createCall = calls.find((call) => call.url.endsWith("/rest/api/3/issue"));
+    const payload = JSON.parse(createCall.options.body);
+    assert.equal(payload.fields.issuetype.id, "10046");
+    assert.equal(payload.fields.customfield_10431.id, "23025");
+    assert.equal(payload.fields.description.type, "doc");
+    assert.match(JSON.stringify(payload), /\\"apikey\\": \\"visible\\"/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 async function inspectPdf(pdf) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const document = await pdfjs.getDocument({
@@ -828,6 +976,10 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /environment_error: "Error de ambiente"/);
   assert.match(appSource, /reported: "Reportado"/);
   assert.match(appSource, /data-save-failure-review/);
+  assert.match(appSource, /data-create-jira-defect/);
+  assert.match(appSource, /requestElmuloJson\("\/api\/jira\/defects"/);
+  assert.match(appSource, /jira-defect-confirmation-modal/);
+  assert.match(appSource, /El comentario es obligatorio antes de crear el defecto/);
   assert.match(appSource, /requestElmuloJson\("\/api\/annotations"/);
   assert.match(appSource, /\/api\/trends\?environment=/);
   assert.match(appSource, /requestElmuloJson/);

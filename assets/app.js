@@ -1685,8 +1685,21 @@
       </div>
       <div class="failureReviewActions">
         <button class="saveReviewButton" type="button" data-save-failure-review>Guardar seguimiento</button>
+        ${annotation.ticket
+          ? `<a class="jiraDefectLink" href="${escapeHtml(annotation.ticket)}" target="_blank" rel="noreferrer">Abrir bug en Jira</a>`
+          : `<button
+              class="jiraDefectButton"
+              type="button"
+              data-create-jira-defect
+              ${annotation.comment?.trim() && durablePersistence ? "" : "disabled"}
+            >Crear defecto en Jira</button>`}
         <span class="saveFeedback" data-save-feedback aria-live="polite"></span>
       </div>
+      ${!durablePersistence
+        ? '<p class="jiraDefectHint">Abrí el reporte con Elmulo Serve para crear defectos en Jira.</p>'
+        : !annotation.ticket
+          ? '<p class="jiraDefectHint">El comentario es obligatorio antes de crear el defecto.</p>'
+          : ""}
       ${annotation.updatedAt
         ? `<p class="auditSummary">Último cambio: ${escapeHtml(formatDate(annotation.updatedAt))} · ${escapeHtml(annotation.actor || "Usuario local")} · revisión ${escapeHtml(annotation.revision || 1)}</p>`
         : ""}
@@ -1695,6 +1708,94 @@
         <div data-audit-events>Desplegá para consultar el historial inmutable.</div>
       </details>
     </section>`;
+  }
+
+  function closeJiraDefectConfirmation() {
+    document.getElementById("jira-defect-confirmation-modal")?.remove();
+  }
+
+  function openJiraDefectConfirmation(test, comment) {
+    closeJiraDefectConfirmation();
+    const dialog = document.createElement("dialog");
+    dialog.id = "jira-defect-confirmation-modal";
+    dialog.className = "reuseConfirmationModal jiraDefectModal";
+    dialog.innerHTML = `
+      <form method="dialog" class="confirmationShell">
+        <header>
+          <div>
+            <p class="eyebrow">Creación de defecto</p>
+            <h2>¿Confirmás el reporte en Jira?</h2>
+          </div>
+          <button type="button" class="modalCloseButton" data-close-jira-defect aria-label="Cerrar">×</button>
+        </header>
+        <div class="confirmationBody jiraDefectConfirmationBody">
+          <dl>
+            <div><dt>Proyecto</dt><dd>FONLP06</dd></div>
+            <div><dt>Tipo</dt><dd>Error</dd></div>
+            <div><dt>Clasificación</dt><dd>Mantenimiento (IT4IT)</dd></div>
+            <div><dt>Escenario</dt><dd>${escapeHtml(test.title)}</dd></div>
+            <div><dt>Ambiente</dt><dd>${escapeHtml(run.environment || "Sin especificar")}</dd></div>
+          </dl>
+          <section>
+            <h3>Comentario de la falla</h3>
+            <p>${escapeHtml(comment)}</p>
+          </section>
+          <p class="jiraDefectWarning">Se enviarán a Jira el Gherkin ejecutado, el error final y el request/response asociados a la falla.</p>
+          <div class="confirmationFeedback" data-jira-defect-feedback aria-live="polite"></div>
+        </div>
+        <footer>
+          <button type="button" class="secondaryButton" data-close-jira-defect>Cancelar</button>
+          <button type="button" class="jiraDefectButton" data-confirm-jira-defect>Crear defecto</button>
+        </footer>
+      </form>`;
+    document.body.appendChild(dialog);
+    dialog.querySelectorAll("[data-close-jira-defect]").forEach((button) => {
+      button.addEventListener("click", closeJiraDefectConfirmation);
+    });
+    dialog.querySelector("[data-confirm-jira-defect]")?.addEventListener("click", async () => {
+      const confirmButton = dialog.querySelector("[data-confirm-jira-defect]");
+      const feedback = dialog.querySelector("[data-jira-defect-feedback]");
+      confirmButton.disabled = true;
+      feedback.textContent = "Consultando Jira y procesando el defecto…";
+      feedback.className = "confirmationFeedback";
+      try {
+        const result = await requestElmuloJson("/api/jira/defects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            runId: run.id,
+            testId: test.id,
+            comment,
+            actor: state.actor,
+          }),
+        });
+        state.annotations = result.annotations || state.annotations;
+        run.annotations = state.annotations;
+        run.trends = result.trends || run.trends;
+        persistAnnotationsLocally();
+        closeJiraDefectConfirmation();
+        renderList();
+        const detailFeedback = document.querySelector("[data-save-feedback]");
+        if (detailFeedback) {
+          const actionLabel = {
+            created: "Defecto creado",
+            recreated: "Recurrencia creada",
+            reused: "El defecto existente fue actualizado",
+          }[result.action] || "Defecto reportado";
+          detailFeedback.textContent = `${actionLabel}: ${result.issueKey}.`;
+          detailFeedback.classList.remove("error");
+        }
+      } catch (error) {
+        feedback.textContent = error.message;
+        feedback.className = "confirmationFeedback error";
+        confirmButton.disabled = false;
+      }
+    });
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeJiraDefectConfirmation();
+    });
+    dialog.showModal();
   }
 
   async function loadAuditTrail(test, container) {
@@ -2185,6 +2286,24 @@
     }
 
     const saveReviewButton = detail.querySelector("[data-save-failure-review]");
+    const failureComment = detail.querySelector("[data-failure-comment]");
+    const createJiraDefectButton = detail.querySelector("[data-create-jira-defect]");
+    if (failureComment && createJiraDefectButton) {
+      const syncJiraButton = () => {
+        createJiraDefectButton.disabled =
+          !failureComment.value.trim() || location.protocol === "file:";
+      };
+      failureComment.addEventListener("input", syncJiraButton);
+      createJiraDefectButton.addEventListener("click", () => {
+        const comment = failureComment.value.trim();
+        if (!comment) {
+          syncJiraButton();
+          return;
+        }
+        openJiraDefectConfirmation(test, comment);
+      });
+      syncJiraButton();
+    }
     if (saveReviewButton) {
       saveReviewButton.addEventListener("click", async () => {
         const comment = detail.querySelector("[data-failure-comment]")?.value.trim() || "";

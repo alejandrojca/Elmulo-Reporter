@@ -21,6 +21,7 @@ const {
 } = require("./executive-pdf.cjs");
 const { normalizeActor, sanitizeText } = require("./security.cjs");
 const { createRerunManager } = require("./rerun.cjs");
+const { loadJiraConfig, reportDefect } = require("./jira.cjs");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -137,6 +138,7 @@ async function serveReport(options = {}) {
 
   let writeQueue = Promise.resolve();
   const rerunManager = createRerunManager(projectRoot, options.rerun || {});
+  const jiraConfig = loadJiraConfig(projectRoot, options.env || process.env);
   let allowedMutationOrigins = new Set();
 
   const server = http.createServer(async (request, response) => {
@@ -180,8 +182,17 @@ async function serveReport(options = {}) {
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, {
         ok: true,
-        version: "2.0.0-beta.5",
+        version: "2.0.0-beta.6",
         schemaVersion: 3,
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/jira/status") {
+      sendJson(response, 200, {
+        enabled: jiraConfig.enabled,
+        projectKey: jiraConfig.projectKey,
+        issueType: jiraConfig.issueTypeName,
       });
       return;
     }
@@ -487,6 +498,66 @@ async function serveReport(options = {}) {
         sendJson(response, 200, await writeQueue);
       } catch (error) {
         sendJson(response, 400, { error: error.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/jira/defects") {
+      if (!trustedMutationOrigin(request, allowedMutationOrigins)) {
+        sendJson(response, 403, { error: "Origen no autorizado para reportar defectos." }, {
+          allowAnyOrigin: false,
+        });
+        return;
+      }
+      try {
+        const body = await readRequestJson(request);
+        writeQueue = writeQueue.catch(() => {}).then(async () => {
+          const run = JSON.parse(fs.readFileSync(dataPath, "utf8"));
+          const test = run.tests.find((candidate) => candidate.id === body.testId);
+          if (body.runId !== run.id || !test) {
+            throw new Error("La prueba no pertenece al reporte activo.");
+          }
+          const comment = String(body.comment || "").trim();
+          const defect = await reportDefect({
+            config: jiraConfig,
+            projectRoot,
+            run,
+            test,
+            comment,
+          });
+
+          const database = await openDatabase(databasePath);
+          persistAnnotation(database, {
+            runId: run.id,
+            testId: test.id,
+            status: "reported",
+            comment,
+            ticket: defect.issueUrl,
+            actor: normalizeActor(body.actor),
+            source: `jira_${defect.action}`,
+          });
+          run.annotations = loadAnnotations(database, run.id);
+          run.trends = buildTrends(database, run);
+          persistDatabase(databasePath, database);
+          database.close();
+          writeJson(dataPath, run);
+          fs.writeFileSync(indexPath, buildHtml(run), "utf8");
+          return {
+            ...defect,
+            annotation: run.annotations[test.id],
+            annotations: run.annotations,
+            trends: run.trends,
+          };
+        });
+        sendJson(response, 200, await writeQueue, {
+          allowAnyOrigin: false,
+          allowOrigin: String(request.headers.origin || ""),
+        });
+      } catch (error) {
+        sendJson(response, 400, { error: error.message }, {
+          allowAnyOrigin: false,
+          allowOrigin: String(request.headers.origin || ""),
+        });
       }
       return;
     }
