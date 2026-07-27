@@ -435,7 +435,7 @@ function persistRun(database, run) {
         system: run.system || {},
         source: run.source || {},
         execution: run.execution || null,
-        reporterVersion: "2.0.0-beta.4",
+        reporterVersion: "2.0.0-beta.5",
       }),
     ],
   );
@@ -924,7 +924,7 @@ async function finalizeRun(options = {}) {
   if (!run) throw new Error(`No se encontró ${rawPath}`);
 
   run.schemaVersion = DATABASE_SCHEMA_VERSION;
-  run.reporterVersion = "2.0.0-beta.4";
+  run.reporterVersion = "2.0.0-beta.5";
   run.lifecycle = run.lifecycle || "completed";
   run.source = run.source || {
     branch: process.env.CI_COMMIT_REF_NAME || "",

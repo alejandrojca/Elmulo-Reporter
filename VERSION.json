@@ -1,6 +1,6 @@
 {
   "name": "Elmulo Reporter",
-  "version": "2.0.0-beta.4",
+  "version": "2.0.0-beta.5",
   "schemaVersion": 3,
   "source": "elmulo-reporter",
   "results": "elmulo-results",
