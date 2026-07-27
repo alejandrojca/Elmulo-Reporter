@@ -435,7 +435,7 @@ function persistRun(database, run) {
         system: run.system || {},
         source: run.source || {},
         execution: run.execution || null,
-        reporterVersion: "2.0.0-beta.6",
+        reporterVersion: "2.0.0-beta.7",
       }),
     ],
   );
@@ -873,17 +873,25 @@ function buildHtml(run) {
 `;
 }
 
+function copyDirectoryContents(sourceDir, destinationDir) {
+  ensureDir(destinationDir);
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destinationPath = path.join(destinationDir, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectoryContents(sourcePath, destinationPath);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(sourcePath, destinationPath);
+    }
+  }
+}
+
 function copyStaticAssets(reportDir) {
   // Assets belong to the reporter package, not to the consuming Cypress project.
-  const sourceDir = path.join(__dirname, "assets");
-  const destinationDir = path.join(reportDir, "assets");
-  ensureDir(destinationDir);
-  for (const filename of fs.readdirSync(sourceDir)) {
-    fs.copyFileSync(
-      path.join(sourceDir, filename),
-      path.join(destinationDir, filename),
-    );
-  }
+  copyDirectoryContents(
+    path.join(__dirname, "assets"),
+    path.join(reportDir, "assets"),
+  );
 }
 
 function mergeHttpManifest(run, runDir) {
@@ -924,7 +932,7 @@ async function finalizeRun(options = {}) {
   if (!run) throw new Error(`No se encontró ${rawPath}`);
 
   run.schemaVersion = DATABASE_SCHEMA_VERSION;
-  run.reporterVersion = "2.0.0-beta.6";
+  run.reporterVersion = "2.0.0-beta.7";
   run.lifecycle = run.lifecycle || "completed";
   run.source = run.source || {
     branch: process.env.CI_COMMIT_REF_NAME || "",
@@ -967,6 +975,8 @@ module.exports = {
   buildQualityAnalytics,
   canonicalTestIdentity,
   compareRuns,
+  copyDirectoryContents,
+  copyStaticAssets,
   enrichRunTests,
   finalizeRun,
   loadAnnotations,

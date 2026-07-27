@@ -9,6 +9,7 @@ const {
   buildTrends,
   buildQualityAnalytics,
   compareRuns,
+  copyDirectoryContents,
   enrichRunTests,
   loadAnnotationAudit,
   loadAnnotations,
@@ -697,6 +698,23 @@ test("consolida la calidad histórica usando la identidad canónica de Jira", as
   );
   assert.equal(analytics.recurrentFailures[0].failure_rate, 100);
   database.close();
+});
+
+test("copia assets estáticos anidados de forma recursiva", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-assets-"));
+  const source = path.join(root, "source");
+  const destination = path.join(root, "destination");
+  fs.mkdirSync(path.join(source, "fonts"), { recursive: true });
+  fs.writeFileSync(path.join(source, "app.css"), "body {}");
+  fs.writeFileSync(path.join(source, "fonts", "font.txt"), "font-data");
+
+  copyDirectoryContents(source, destination);
+
+  assert.equal(fs.readFileSync(path.join(destination, "app.css"), "utf8"), "body {}");
+  assert.equal(
+    fs.readFileSync(path.join(destination, "fonts", "font.txt"), "utf8"),
+    "font-data",
+  );
 });
 
 test("reconstruye Gherkin ejecutado y selecciona el intercambio asociado al fallo", () => {

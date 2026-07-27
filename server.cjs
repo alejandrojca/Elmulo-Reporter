@@ -182,7 +182,7 @@ async function serveReport(options = {}) {
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, {
         ok: true,
-        version: "2.0.0-beta.6",
+        version: "2.0.0-beta.7",
         schemaVersion: 3,
       });
       return;
