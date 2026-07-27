@@ -1017,6 +1017,10 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(stylesSource, /\.historyEntry\.currentExecution/);
   assert.match(
     stylesSource,
+    /html,\s*body\s*\{[\s\S]*?height:\s*100%;[\s\S]*?overflow:\s*hidden;/,
+  );
+  assert.match(
+    stylesSource,
     /\.appFrame[\s\S]*?height:\s*100dvh;[\s\S]*?overflow:\s*hidden;/,
   );
   assert.match(
