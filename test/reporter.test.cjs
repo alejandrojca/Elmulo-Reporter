@@ -1034,6 +1034,10 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(stylesSource, /\.metricCard\.failedBreakdown/);
   assert.match(
     stylesSource,
+    /\.attentionCard:not\(:disabled\):hover,[\s\S]*?\.attentionCard:not\(:disabled\):focus-visible/,
+  );
+  assert.match(
+    stylesSource,
     /\.sidebarLink\.active \.sidebarIconImage[\s\S]*?filter:/,
   );
   assert.match(stylesSource, /\.historyEntry\.notReusable/);

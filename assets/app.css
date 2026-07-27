@@ -2290,6 +2290,23 @@ html[data-theme="dark"] .exportPdfButton {
   gap: 0.25rem;
   padding: 0.8rem;
   text-align: left;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.attentionCard:not(:disabled):hover,
+.attentionCard:not(:disabled):focus-visible {
+  border-color: var(--attention-color, var(--pw-blue-700));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--attention-color, var(--pw-blue-700)) 24%, transparent),
+    0 12px 24px color-mix(in srgb, var(--attention-color, var(--pw-blue-700)) 14%, transparent);
+  transform: translateY(-2px);
+}
+
+.attentionCard:not(:disabled):focus-visible {
+  outline: none;
 }
 
 .attentionCard.failed,
