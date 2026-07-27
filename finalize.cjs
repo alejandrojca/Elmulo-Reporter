@@ -434,6 +434,7 @@ function persistRun(database, run) {
         cypressVersion: run.cypressVersion || "",
         system: run.system || {},
         source: run.source || {},
+        execution: run.execution || null,
         reporterVersion: "2.0.0-beta.4",
       }),
     ],
@@ -611,7 +612,8 @@ function loadRunResults(database, runId) {
   const [run] = queryRows(
     database,
     `SELECT id, environment, tag_expression, status, started_at, ended_at,
-            duration_ms, total, passed, failed, skipped, pending, flaky
+            duration_ms, total, passed, failed, skipped, pending, flaky,
+            metadata_json
        FROM runs
       WHERE id = ?`,
     [runId],
@@ -645,7 +647,23 @@ function loadRunResults(database, runId) {
     delete test.http_json;
   }
 
-  return { ...run, tests };
+  let metadata = {};
+  try {
+    metadata = JSON.parse(run.metadata_json || "{}");
+  } catch {
+    metadata = {};
+  }
+  delete run.metadata_json;
+
+  return {
+    ...run,
+    browser: metadata.browser || {},
+    system: metadata.system || {},
+    source: metadata.source || {},
+    execution: metadata.execution || null,
+    specs: [...new Set(tests.map((test) => test.spec).filter(Boolean))],
+    tests,
+  };
 }
 
 function loadTestHistory(database, jiraId) {

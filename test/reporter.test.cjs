@@ -22,6 +22,18 @@ const {
 const { registerElmuloReporter } = require("../plugin.cjs");
 const { buildExecutivePdf } = require("../executive-pdf.cjs");
 const { redactSecrets, sanitizeLogEntry } = require("../security.cjs");
+const {
+  createRerunManager,
+  normalizeRerunArgs,
+  resolveNpmCli,
+  resolveRerunPlan,
+} = require("../rerun.cjs");
+const { EventEmitter } = require("node:events");
+const {
+  localMutationOrigins,
+  serveReport,
+  trustedMutationOrigin,
+} = require("../server.cjs");
 
 function buildRun() {
   return normalizeCypressResults(
@@ -93,6 +105,323 @@ test("normaliza reintentos y detecta una prueba inestable", () => {
   assert.equal(run.counts.flaky, 1);
   assert.equal(run.durationMs, 3000);
   assert.equal(run.tests[0].attempts[1].screenshots.length, 1);
+});
+
+test("reconstruye una reejecución histórica sin interpolar comandos de shell", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-rerun-"));
+  const npmCliPath = path.join(projectRoot, "npm installation", "npm-cli.js");
+  fs.mkdirSync(path.dirname(npmCliPath), { recursive: true });
+  fs.writeFileSync(npmCliPath, "");
+  fs.writeFileSync(
+    path.join(projectRoot, "package.json"),
+    JSON.stringify({
+      scripts: {
+        "report-sandbox-ecommerce": "node report.cjs",
+      },
+    }),
+  );
+  const plan = resolveRerunPlan(
+    projectRoot,
+    {
+      id: "run-history",
+      environment: "sandbox",
+      tag_expression: "@smoke and not @manual",
+      execution: {
+        runner: "npm",
+        script: "report-sandbox-ecommerce",
+      },
+    },
+    { npmCliPath },
+  );
+
+  assert.equal(plan.script, "report-sandbox-ecommerce");
+  assert.equal(plan.command, process.execPath);
+  assert.deepEqual(
+    plan.args,
+    [npmCliPath, "run", "report-sandbox-ecommerce", "--", "@smoke and not @manual"],
+  );
+  assert.equal(plan.env.CYPRESS_ENVIRONMENT, "sandbox");
+  assert.equal(plan.env.CYPRESS_TAGS, "@smoke and not @manual");
+});
+
+test("detecta un único script histórico por ambiente y evita reejecuciones simultáneas", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-rerun-"));
+  const npmCliPath = path.join(projectRoot, "npm-cli.js");
+  fs.writeFileSync(npmCliPath, "");
+  fs.writeFileSync(
+    path.join(projectRoot, "package.json"),
+    JSON.stringify({
+      scripts: {
+        "report-qa-ecommerce": "node report.cjs",
+        test: "node --test",
+      },
+    }),
+  );
+  const child = new EventEmitter();
+  let spawned = null;
+  const manager = createRerunManager(projectRoot, {
+    npmCliPath,
+    spawnProcess(command, args, options) {
+      spawned = { command, args, options };
+      return child;
+    },
+  });
+  const run = {
+    id: "run-qa",
+    environment: "qa",
+    tag_expression: "@regression",
+  };
+
+  const status = manager.start(run);
+  assert.equal(status.status, "running");
+  assert.equal(spawned.options.shell, false);
+  assert.equal(spawned.options.cwd, projectRoot);
+  assert.throws(() => manager.start({ ...run, id: "other-run" }), /Ya se está/);
+
+  child.emit("exit", 0);
+  assert.equal(manager.get(run.id).status, "completed");
+});
+
+test("permite reejecutar corridas históricas del demo incorporado", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-rerun-demo-"));
+  const npmCliPath = path.join(projectRoot, "npm-cli.js");
+  fs.writeFileSync(npmCliPath, "");
+  fs.writeFileSync(
+    path.join(projectRoot, "package.json"),
+    JSON.stringify({ scripts: { demo: "node cli.cjs demo" } }),
+  );
+
+  const plan = resolveRerunPlan(
+    projectRoot,
+    {
+      id: "demo-history",
+      environment: "sandbox",
+      tag_expression: "@mtt and not @negative",
+      source: { commit: "demo" },
+    },
+    { npmCliPath },
+  );
+
+  assert.equal(plan.script, "demo");
+});
+
+test("resuelve npm-cli.js como archivo y evita ejecutar npm.cmd en Windows", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-rerun-npm-"));
+  const npmCliPath = path.join(projectRoot, "Node With Spaces", "npm-cli.js");
+  fs.mkdirSync(path.dirname(npmCliPath), { recursive: true });
+  fs.writeFileSync(npmCliPath, "// npm cli");
+
+  assert.equal(resolveNpmCli(projectRoot, { npmCliPath }), npmCliPath);
+  assert.throws(
+    () => resolveNpmCli(projectRoot, {
+      npmCliPath: path.join(projectRoot, "npm.cmd"),
+    }),
+    /npm-cli\.js/,
+  );
+});
+
+test("prioriza script y argv persistidos sobre fallbacks globales", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-rerun-args-"));
+  const npmCliPath = path.join(projectRoot, "npm-cli.js");
+  fs.writeFileSync(npmCliPath, "");
+  fs.writeFileSync(
+    path.join(projectRoot, "package.json"),
+    JSON.stringify({
+      scripts: {
+        "report-qa-original": "node original.cjs",
+        "report-qa-global": "node global.cjs",
+      },
+    }),
+  );
+
+  const plan = resolveRerunPlan(
+    projectRoot,
+    {
+      id: "run-with-args",
+      environment: "qa",
+      tag_expression: "@ignored-as-positional",
+      execution: {
+        runner: "npm",
+        script: "report-qa-original",
+        args: ["--browser", "chrome", "--config", "video=false"],
+      },
+    },
+    {
+      configuredScript: "report-qa-global",
+      npmCliPath,
+    },
+  );
+
+  assert.equal(plan.script, "report-qa-original");
+  assert.deepEqual(plan.args, [
+    npmCliPath,
+    "run",
+    "report-qa-original",
+    "--",
+    "--browser",
+    "chrome",
+    "--config",
+    "video=false",
+  ]);
+  assert.deepEqual(
+    normalizeRerunArgs('["--headed",true,2]'),
+    ["--headed", "true", "2"],
+  );
+  assert.throws(() => normalizeRerunArgs('{"unsafe":true}'), /array/);
+});
+
+test("rechaza orígenes cross-site para mutaciones de reejecución", () => {
+  const request = (headers) => ({ headers });
+  const allowedOrigins = localMutationOrigins("127.0.0.1", 4190);
+
+  assert.equal(
+    trustedMutationOrigin(request({
+      host: "127.0.0.1:4190",
+      origin: "http://127.0.0.1:4190",
+      "sec-fetch-site": "same-origin",
+    }), allowedOrigins),
+    true,
+  );
+  assert.equal(
+    trustedMutationOrigin(request({
+      host: "127.0.0.1:4190",
+      origin: "https://malicious.example",
+      "sec-fetch-site": "cross-site",
+    }), allowedOrigins),
+    false,
+  );
+  assert.equal(
+    trustedMutationOrigin(request({
+      host: "127.0.0.1:4190",
+      origin: "https://127.0.0.1:4190",
+      "sec-fetch-site": "cross-site",
+    }), allowedOrigins),
+    false,
+  );
+  assert.equal(
+    trustedMutationOrigin(request({
+      host: "127.0.0.1:4190",
+      "sec-fetch-site": "cross-site",
+    }), allowedOrigins),
+    false,
+  );
+  assert.equal(
+    trustedMutationOrigin(request({ host: "127.0.0.1:4190" }), allowedOrigins),
+    true,
+  );
+  assert.equal(
+    trustedMutationOrigin(request({
+      host: "evil.test",
+      origin: "http://evil.test",
+      "sec-fetch-site": "same-origin",
+    }), allowedOrigins),
+    false,
+  );
+});
+
+test("el endpoint de reejecución bloquea POST cross-site y limita CORS", async () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-rerun-api-"));
+  const outputDir = path.join(projectRoot, "elmulo-results");
+  const reportDir = path.join(outputDir, "report");
+  const npmCliPath = path.join(projectRoot, "npm-cli.js");
+  fs.mkdirSync(reportDir, { recursive: true });
+  fs.writeFileSync(path.join(reportDir, "index.html"), "<!doctype html>");
+  fs.writeFileSync(path.join(reportDir, "data.json"), JSON.stringify(buildRun()));
+  fs.writeFileSync(npmCliPath, "");
+  fs.writeFileSync(
+    path.join(projectRoot, "package.json"),
+    JSON.stringify({ scripts: { "report-sandbox": "node report.cjs" } }),
+  );
+  const database = await openDatabase(path.join(outputDir, "elmulo.sqlite"));
+  const run = buildRun();
+  run.execution = { runner: "npm", script: "report-sandbox" };
+  persistRun(database, run);
+  fs.writeFileSync(
+    path.join(outputDir, "elmulo.sqlite"),
+    Buffer.from(database.export()),
+  );
+  database.close();
+
+  let spawned = false;
+  const child = new EventEmitter();
+  const { server, url } = await serveReport({
+    projectRoot,
+    port: 0,
+    rerun: {
+      npmCliPath,
+      spawnProcess() {
+        spawned = true;
+        return child;
+      },
+    },
+  });
+
+  try {
+    const rejected = await fetch(`${url}/api/runs/${run.id}/rerun`, {
+      method: "POST",
+      headers: {
+        Origin: "https://malicious.example",
+        "Sec-Fetch-Site": "cross-site",
+      },
+    });
+    assert.equal(rejected.status, 403);
+    assert.equal(rejected.headers.get("access-control-allow-origin"), null);
+    assert.equal(spawned, false);
+
+    const rebound = await fetch(`${url}/api/runs/${run.id}/rerun`, {
+      method: "POST",
+      headers: {
+        Host: "evil.test",
+        Origin: "http://evil.test",
+        "Sec-Fetch-Site": "same-origin",
+      },
+    });
+    assert.equal(rebound.status, 403);
+    assert.equal(spawned, false);
+
+    const accepted = await fetch(`${url}/api/runs/${run.id}/rerun`, {
+      method: "POST",
+      headers: {
+        Origin: url,
+        "Sec-Fetch-Site": "same-origin",
+      },
+    });
+    assert.equal(accepted.status, 202);
+    assert.equal(accepted.headers.get("access-control-allow-origin"), url);
+    assert.equal(spawned, true);
+  } finally {
+    child.emit("exit", 0);
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("rerunScript explícito prevalece sobre npm_lifecycle_event", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-plugin-rerun-"));
+  const handlers = {};
+  const previousLifecycle = process.env.npm_lifecycle_event;
+  process.env.npm_lifecycle_event = "report-from-lifecycle";
+  try {
+    registerElmuloReporter(
+      (eventName, handler) => {
+        handlers[eventName] = handler;
+      },
+      { projectRoot, env: { ENVIRONMENT: "qa" } },
+      { rerunScript: "report-explicit" },
+    );
+    handlers["before:run"]({ startedTestsAt: "2026-07-23T10:00:00.000Z" });
+    const runId = fs.readFileSync(
+      path.join(projectRoot, "elmulo-results", "latest-run.txt"),
+      "utf8",
+    );
+    const session = JSON.parse(fs.readFileSync(
+      path.join(projectRoot, "elmulo-results", "runs", runId, "session.json"),
+      "utf8",
+    ));
+    assert.equal(session.execution.script, "report-explicit");
+  } finally {
+    if (previousLifecycle === undefined) delete process.env.npm_lifecycle_event;
+    else process.env.npm_lifecycle_event = previousLifecycle;
+  }
 });
 
 test("habilita Elmulo solo en la configuración donde se registra", () => {
@@ -241,6 +570,7 @@ test("persiste historial real en un archivo SQLite", async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "elmulo-test-"));
   const databasePath = path.join(tempDir, "history.sqlite");
   const run = buildRun();
+  run.execution = { runner: "npm", script: "report-sandbox-ecommerce" };
   run.tests[0].tags = ["@FONLP06-9999", "@smoke"];
   run.tests[0].http = [{
     request: {
@@ -278,6 +608,8 @@ test("persiste historial real en un archivo SQLite", async () => {
   assert.equal(Number(annotatedTrends.runs[0].reported), 1);
   assert.equal(annotations[run.tests[0].id].status, "reported");
   assert.equal(historicalRun.tests[0].status, "reported");
+  assert.deepEqual(historicalRun.execution, run.execution);
+  assert.deepEqual(historicalRun.specs, ["cypress/e2e/example.feature"]);
   assert.equal(historicalRun.tests[0].ticket, "https://tracker.example/BUG-1234");
   assert.equal(
     historicalRun.tests[0].http[0].request.headers.authorization,
@@ -536,6 +868,18 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.doesNotMatch(appSource, /window\.confirm/);
   assert.match(appSource, /id="trend-environment"/);
   assert.match(appSource, /data-close-trend-history/);
+  assert.match(appSource, /data-rerun-trend-report/);
+  assert.match(appSource, /\/api\/runs\/\$\{encodeURIComponent\(runId\)\}\/rerun/);
+  assert.match(appSource, /Reejecutar reporte/);
+  assert.match(
+    appSource,
+    /if \(state\.selectedTrendRunId !== requestedRunId\) return;/,
+  );
+  assert.match(
+    appSource,
+    /if \(state\.selectedTrendRunId !== runId\) return;/,
+  );
+  assert.match(stylesSource, /\.rerunReportButton/);
   assert.match(appSource, /id="test-history-modal"/);
   assert.match(appSource, /<details class="panel trendPanel">/);
   assert.match(appSource, /run\.tests\.map\(effectiveTestStatus\)/);

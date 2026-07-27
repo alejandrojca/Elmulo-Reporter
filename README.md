@@ -325,6 +325,44 @@ El puerto predeterminado es `4178`. Puede configurarse mediante
 `ELMULO_PORT`. La salida puede cambiarse con `ELMULO_OUTPUT_DIR`; el plugin y
 la CLI deben utilizar el mismo valor.
 
+### Reejecutar una corrida histórica
+
+En **Ejecuciones > Tendencia**, seleccionar una corrida muestra la acción
+**Reejecutar reporte**. Elmulo vuelve a lanzar el script npm que originó esa
+corrida y le entrega el mismo ambiente y la misma expresión de tags.
+
+Las corridas nuevas registran automáticamente `npm_lifecycle_event`. Si un
+proyecto tiene más de un script de reporte para el mismo ambiente, se puede
+elegir explícitamente el reutilizable:
+
+```powershell
+$env:ELMULO_RERUN_SCRIPT = "report-sandbox-ecommerce"
+npm run elmulo:serve
+```
+
+También puede declararse `rerunScript` en las opciones de
+`registerElmuloReporter`. El servidor acepta una sola reejecución simultánea y
+lanza npm sin interpolar parámetros en un shell.
+
+Si el workflow recibe otros argumentos dinámicos además de tags, deben
+registrarse explícitamente como un array. Se conservan como argumentos
+estructurados y se vuelven a pasar a npm sin concatenarlos:
+
+```powershell
+$env:ELMULO_RERUN_ARGS_JSON = '["--browser","chrome","--config","video=false"]'
+npm run report-sandbox-ecommerce
+```
+
+La misma configuración puede indicarse mediante `rerunArgs` al registrar el
+plugin. Cuando una corrida guarda `execution.args`, éstos tienen prioridad; si
+no existen, Elmulo conserva la compatibilidad histórica pasando la expresión
+de tags como único argumento posicional. Los parámetros que nunca fueron
+persistidos por corridas antiguas no pueden reconstruirse.
+
+El bloqueo de concurrencia pertenece al proceso de `elmulo serve`: evita dos
+reejecuciones desde esa instancia, pero no coordina otros servidores Elmulo que
+apunten al mismo proyecto.
+
 ## Salida
 
 Por defecto, Elmulo crea `elmulo-results` en la raíz del proyecto Cypress:

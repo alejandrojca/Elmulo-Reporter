@@ -243,6 +243,7 @@ function normalizeCypressResults(results, context) {
       jobId: context.jobId || process.env.CI_JOB_ID || "",
       jobUrl: context.jobUrl || process.env.CI_JOB_URL || "",
     },
+    execution: context.execution || null,
     lifecycle: "completed",
     system: {
       name: results?.osName || process.platform,

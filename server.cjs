@@ -20,6 +20,7 @@ const {
   buildExecutivePdf,
 } = require("./executive-pdf.cjs");
 const { normalizeActor, sanitizeText } = require("./security.cjs");
+const { createRerunManager } = require("./rerun.cjs");
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -34,13 +35,46 @@ const MIME_TYPES = {
   ".pdf": "application/pdf",
 };
 
-function sendJson(response, statusCode, value) {
-  response.writeHead(statusCode, {
-    "Access-Control-Allow-Origin": "*",
+function sendJson(response, statusCode, value, options = {}) {
+  const headers = {
     "Cache-Control": "no-store",
     "Content-Type": "application/json; charset=utf-8",
+  };
+  if (options.allowOrigin) {
+    headers["Access-Control-Allow-Origin"] = options.allowOrigin;
+    headers.Vary = "Origin";
+  } else if (options.allowAnyOrigin !== false) {
+    headers["Access-Control-Allow-Origin"] = "*";
+  }
+  response.writeHead(statusCode, {
+    ...headers,
   });
   response.end(JSON.stringify(value));
+}
+
+function trustedMutationOrigin(request, allowedOrigins = new Set()) {
+  const origin = String(request.headers.origin || "").trim();
+  const fetchSite = String(request.headers["sec-fetch-site"] || "").toLowerCase();
+  if (!origin) return fetchSite !== "cross-site";
+  try {
+    const originUrl = new URL(origin);
+    return (
+      originUrl.protocol === "http:" &&
+      allowedOrigins.has(originUrl.origin.toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
+function localMutationOrigins(host, port) {
+  const normalizedHost = String(host || "").trim().toLowerCase();
+  const origins = new Set();
+  if (["127.0.0.1", "localhost", "0.0.0.0", "::1", "[::1]"].includes(normalizedHost)) {
+    origins.add(`http://127.0.0.1:${port}`);
+    origins.add(`http://localhost:${port}`);
+  }
+  return origins;
 }
 
 function persistDatabase(databasePath, database) {
@@ -91,16 +125,45 @@ async function serveReport(options = {}) {
   const dataPath = path.join(reportDir, "data.json");
   const indexPath = path.join(reportDir, "index.html");
   const host = options.host || "127.0.0.1";
-  const port = Number(options.port || process.env.ELMULO_PORT || 4178);
+  const port = Number(
+    options.port !== undefined
+      ? options.port
+      : process.env.ELMULO_PORT || 4178,
+  );
 
   if (!fs.existsSync(indexPath) || !fs.existsSync(dataPath)) {
     throw new Error("No existe un reporte generado. Ejecutá yarn elmulo:generate.");
   }
 
   let writeQueue = Promise.resolve();
+  const rerunManager = createRerunManager(projectRoot, options.rerun || {});
+  let allowedMutationOrigins = new Set();
 
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url || "/", `http://${request.headers.host || host}`);
+
+    if (
+      request.method === "OPTIONS" &&
+      /^\/api\/runs\/[^/]+\/rerun$/.test(url.pathname)
+    ) {
+      if (!trustedMutationOrigin(request, allowedMutationOrigins)) {
+        sendJson(response, 403, { error: "Origen no autorizado para reejecutar." }, {
+          allowAnyOrigin: false,
+        });
+        return;
+      }
+      const origin = String(request.headers.origin || "");
+      response.writeHead(204, {
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        ...(origin
+          ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" }
+          : {}),
+        "Cache-Control": "no-store",
+      });
+      response.end();
+      return;
+    }
 
     if (request.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
       response.writeHead(204, {
@@ -233,6 +296,58 @@ async function serveReport(options = {}) {
       return;
     }
 
+    const rerunMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/rerun$/);
+    if (
+      rerunMatch &&
+      (request.method === "GET" || request.method === "POST")
+    ) {
+      const runId = decodeURIComponent(rerunMatch[1]);
+      if (!/^[a-zA-Z0-9_-]+$/.test(runId)) {
+        sendJson(response, 400, { error: "Identificador de corrida inválido." });
+        return;
+      }
+      try {
+        if (request.method === "GET") {
+          const status = rerunManager.get(runId);
+          if (!status) {
+            sendJson(response, 404, { error: "La corrida no fue reejecutada en esta sesión." });
+            return;
+          }
+          sendJson(response, 200, status);
+          return;
+        }
+
+        if (!trustedMutationOrigin(request, allowedMutationOrigins)) {
+          sendJson(response, 403, { error: "Origen no autorizado para reejecutar." }, {
+            allowAnyOrigin: false,
+          });
+          return;
+        }
+
+        const database = await openDatabase(databasePath);
+        const runResults = loadRunResults(database, runId);
+        database.close();
+        if (!runResults) {
+          sendJson(response, 404, { error: "Corrida no encontrada." });
+          return;
+        }
+        const requestOrigin = String(request.headers.origin || "");
+        sendJson(response, 202, rerunManager.start(runResults), {
+          ...(requestOrigin ? { allowOrigin: requestOrigin } : {}),
+          allowAnyOrigin: false,
+        });
+      } catch (error) {
+        const requestOrigin = String(request.headers.origin || "");
+        sendJson(response, 409, { error: error.message }, request.method === "POST"
+          ? {
+              ...(requestOrigin ? { allowOrigin: requestOrigin } : {}),
+              allowAnyOrigin: false,
+            }
+          : {});
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname.startsWith("/api/runs/")) {
       const runId = decodeURIComponent(url.pathname.slice("/api/runs/".length));
       if (!/^[a-zA-Z0-9_-]+$/.test(runId)) {
@@ -247,7 +362,10 @@ async function serveReport(options = {}) {
           sendJson(response, 404, { error: "Corrida no encontrada." });
           return;
         }
-        sendJson(response, 200, runResults);
+        sendJson(response, 200, {
+          ...runResults,
+          rerun: rerunManager.describe(runResults),
+        });
       } catch (error) {
         sendJson(response, 500, { error: error.message });
       }
@@ -439,11 +557,13 @@ async function serveReport(options = {}) {
     server.once("error", reject);
     server.listen(port, host, resolve);
   });
+  const effectivePort = server.address().port;
+  allowedMutationOrigins = localMutationOrigins(host, effectivePort);
 
   return {
     server,
-    url: `http://${host}:${port}`,
+    url: `http://${host}:${effectivePort}`,
   };
 }
 
-module.exports = { serveReport };
+module.exports = { localMutationOrigins, serveReport, trustedMutationOrigin };

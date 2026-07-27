@@ -203,6 +203,7 @@
     trendEnvironment: initialTrendEnvironment,
     selectedTrendRunId: null,
     historicalRun: null,
+    historicalRerun: null,
     historyJiraId: null,
     historyTestTitle: "",
     historyCurrentTestId: null,
@@ -1114,6 +1115,18 @@
       tests.filter((test) => test.status === status).length;
     const otherErrors = tests.filter((test) =>
       otherErrorStatuses.has(test.status)).length;
+    const rerun = state.historicalRerun || historicalRun.rerun || {};
+    const rerunBusy = ["starting", "running"].includes(rerun.status);
+    const rerunLabel = rerun.status === "starting"
+      ? "Iniciando…"
+      : rerun.status === "running"
+        ? "Reejecutando…"
+        : "Reejecutar reporte";
+    const rerunFeedback = {
+      completed: "La reejecución terminó correctamente. Recargá el dashboard para ver la nueva corrida.",
+      failed: rerun.error || "La reejecución no pudo completarse.",
+      unavailable: rerun.reason || "Esta corrida no tiene parámetros reutilizables.",
+    }[rerun.status] || "";
 
     return `<section class="trendHistoryPanel">
       <header class="trendHistoryHeader">
@@ -1123,6 +1136,13 @@
           <p>${escapeHtml(String(historicalRun.environment || "").toUpperCase())} · ${escapeHtml(historicalRun.tag_expression || "Sin filtro de tags")}</p>
         </div>
         <div class="trendHistoryActions">
+          <button
+            class="rerunReportButton"
+            type="button"
+            data-rerun-trend-report
+            ${rerunBusy || rerun.available === false ? "disabled" : ""}
+            title="${escapeHtml(rerun.available === false ? rerun.reason : "Ejecuta nuevamente el mismo script, ambiente y expresión de tags")}"
+          >${escapeHtml(rerunLabel)}</button>
           <span class="environmentPill">${escapeHtml(formatDuration(historicalRun.duration_ms))}</span>
           <button
             class="closeHistoryButton"
@@ -1132,6 +1152,9 @@
           >×</button>
         </div>
       </header>
+      ${rerunFeedback
+        ? `<div class="trendRerunFeedback ${rerun.status === "failed" || rerun.status === "unavailable" ? "error" : "success"}" role="status">${escapeHtml(rerunFeedback)}</div>`
+        : ""}
       <div class="trendHistoryStats">
         <span><strong>${tests.length}</strong> ejecuciones</span>
         <span class="passed"><strong>${statusCount("passed")}</strong> exitosas</span>
@@ -1184,26 +1207,100 @@
     closeButton.addEventListener("click", () => {
       state.selectedTrendRunId = null;
       state.historicalRun = null;
+      state.historicalRerun = null;
       renderTrendArea();
     });
+    document.querySelector("[data-rerun-trend-report]")?.addEventListener(
+      "click",
+      startHistoricalRerun,
+    );
+  }
+
+  function renderTrendHistoryPanel() {
+    const history = document.getElementById("trend-history");
+    if (history) history.innerHTML = renderHistoricalRun();
+    bindTrendHistoryClose();
+  }
+
+  async function pollHistoricalRerun(runId) {
+    window.setTimeout(async () => {
+      if (state.selectedTrendRunId !== runId) return;
+      try {
+        const result = await requestElmuloJson(
+          `/api/runs/${encodeURIComponent(runId)}/rerun`,
+        );
+        if (state.selectedTrendRunId !== runId) return;
+        state.historicalRerun = result;
+        renderTrendHistoryPanel();
+        if (state.historicalRerun.status === "running") {
+          pollHistoricalRerun(runId);
+        }
+      } catch (error) {
+        if (state.selectedTrendRunId !== runId) return;
+        state.historicalRerun = {
+          available: true,
+          status: "failed",
+          error: error.message,
+        };
+        renderTrendHistoryPanel();
+      }
+    }, 2_000);
+  }
+
+  async function startHistoricalRerun() {
+    const runId = state.selectedTrendRunId;
+    if (!runId || !state.historicalRun) return;
+    state.historicalRerun = {
+      ...(state.historicalRerun || {}),
+      available: true,
+      status: "starting",
+    };
+    renderTrendHistoryPanel();
+    try {
+      const result = await requestElmuloJson(
+        `/api/runs/${encodeURIComponent(runId)}/rerun`,
+        { method: "POST" },
+      );
+      if (state.selectedTrendRunId !== runId) return;
+      state.historicalRerun = {
+        available: true,
+        ...result,
+      };
+      renderTrendHistoryPanel();
+      pollHistoricalRerun(runId);
+    } catch (error) {
+      if (state.selectedTrendRunId !== runId) return;
+      state.historicalRerun = {
+        available: true,
+        status: "failed",
+        error: error.message,
+      };
+      renderTrendHistoryPanel();
+    }
   }
 
   function bindTrendEvents() {
     document.querySelectorAll("[data-trend-run-id]").forEach((button) => {
       button.addEventListener("click", async () => {
-        state.selectedTrendRunId = button.dataset.trendRunId;
+        const requestedRunId = button.dataset.trendRunId;
+        state.selectedTrendRunId = requestedRunId;
         state.historicalRun = null;
+        state.historicalRerun = null;
         renderTrendArea();
 
         try {
           const result = await requestElmuloJson(
-            `/api/runs/${encodeURIComponent(state.selectedTrendRunId)}`,
+            `/api/runs/${encodeURIComponent(requestedRunId)}`,
           );
+          if (state.selectedTrendRunId !== requestedRunId) return;
           state.historicalRun = result;
-          const history = document.getElementById("trend-history");
-          if (history) history.innerHTML = renderHistoricalRun();
-          bindTrendHistoryClose();
+          state.historicalRerun = result.rerun || null;
+          renderTrendHistoryPanel();
+          if (state.historicalRerun?.status === "running") {
+            pollHistoricalRerun(state.selectedTrendRunId);
+          }
         } catch (error) {
+          if (state.selectedTrendRunId !== requestedRunId) return;
           const history = document.getElementById("trend-history");
           if (history) {
             history.innerHTML = `<div class="trendHistoryPlaceholder error">${escapeHtml(error.message)}</div>`;
@@ -1217,6 +1314,7 @@
     state.trendEnvironment = environment;
     state.selectedTrendRunId = null;
     state.historicalRun = null;
+    state.historicalRerun = null;
     const trendContent = document.getElementById("trend-content");
     const trendHistory = document.getElementById("trend-history");
     const trendCounter = document.getElementById("trend-run-count");

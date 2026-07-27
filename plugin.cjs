@@ -13,6 +13,7 @@ const {
   sanitizeLogEntry,
   sanitizeText,
 } = require("./security.cjs");
+const { normalizeRerunArgs } = require("./rerun.cjs");
 
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
@@ -31,6 +32,14 @@ function registerElmuloReporter(on, config, options = {}) {
     options.outputDir || process.env.ELMULO_OUTPUT_DIR || "elmulo-results",
   );
   let session = null;
+  const executionScript =
+    options.rerunScript ||
+    process.env.npm_lifecycle_event ||
+    process.env.ELMULO_RERUN_SCRIPT ||
+    "";
+  const executionArgs = normalizeRerunArgs(
+    options.rerunArgs ?? process.env.ELMULO_RERUN_ARGS_JSON,
+  );
 
   function startSession(details = {}) {
     const startedAt = details.startedTestsAt || new Date().toISOString();
@@ -49,6 +58,9 @@ function registerElmuloReporter(on, config, options = {}) {
       tagExpression: config.env?.TAGS || process.env.CYPRESS_TAGS || "",
       lifecycle: "running",
       reporterVersion: "2.0.0-beta.4",
+      execution: executionScript
+        ? { runner: "npm", script: executionScript, args: executionArgs }
+        : null,
     });
     fs.writeFileSync(path.join(outputDir, "latest-run.txt"), runId, "utf8");
     return session;
@@ -72,6 +84,9 @@ function registerElmuloReporter(on, config, options = {}) {
         "unknown",
       tagExpression: config.env?.TAGS || process.env.CYPRESS_TAGS || "",
       projectName: config.projectName || "acceptance-tests",
+      execution: executionScript
+        ? { runner: "npm", script: executionScript, args: executionArgs }
+        : null,
     });
 
     const logManifestPath = path.join(session.runDir, "logs", "manifest.json");

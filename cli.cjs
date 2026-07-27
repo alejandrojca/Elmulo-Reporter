@@ -193,6 +193,10 @@ function createDemoRun(projectRoot) {
       jobId: "",
       jobUrl: "",
     },
+    execution: {
+      runner: "npm",
+      script: "demo",
+    },
   };
 
   writeJson(path.join(runDir, "run.raw.json"), run);

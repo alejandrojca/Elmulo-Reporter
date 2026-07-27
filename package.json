@@ -21,6 +21,7 @@
     "executive-pdf.cjs",
     "finalize.cjs",
     "plugin.cjs",
+    "rerun.cjs",
     "security.cjs",
     "server.cjs",
     "support.ts",
