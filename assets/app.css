@@ -4090,16 +4090,33 @@ pre {
   background: rgb(255 255 255 / 7%);
   border-radius: 9px;
   display: inline-flex;
-  font-size: 1rem;
-  font-weight: 800;
   height: 34px;
   justify-content: center;
   width: 34px;
 }
 
+.sidebarIconImage {
+  filter: brightness(0) invert(1);
+  height: 21px;
+  object-fit: contain;
+  opacity: 0.82;
+  transition: filter 140ms ease, opacity 140ms ease, transform 140ms ease;
+  width: 21px;
+}
+
+.sidebarLink:hover .sidebarIconImage {
+  opacity: 1;
+  transform: scale(1.06);
+}
+
 .sidebarLink.active .sidebarIcon {
   background: #dff8f8;
   color: #075f76;
+}
+
+.sidebarLink.active .sidebarIconImage {
+  filter: brightness(0) saturate(100%) invert(29%) sepia(43%) saturate(1271%) hue-rotate(147deg) brightness(91%) contrast(96%);
+  opacity: 1;
 }
 
 .sidebarLabel {

@@ -1013,6 +1013,14 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /data-history-environment/);
   assert.match(appSource, /state\.testHistoryEntries\[0\]\?\.environment/);
   assert.match(appSource, /currentExecutionBadge/);
+  assert.match(appSource, /assets\/menu-icons\/\$\{escapeHtml\(item\.icon\)\}/);
+  assert.match(appSource, /icon:\s*"summary\.png"/);
+  assert.match(appSource, /icon:\s*"preferences\.png"/);
+  assert.match(stylesSource, /\.sidebarIconImage/);
+  assert.match(
+    stylesSource,
+    /\.sidebarLink\.active \.sidebarIconImage[\s\S]*?filter:/,
+  );
   assert.match(stylesSource, /\.historyEntry\.notReusable/);
   assert.match(stylesSource, /\.historyEntry\.currentExecution/);
   assert.match(

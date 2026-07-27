@@ -2562,32 +2562,32 @@
     overview: {
       label: "Resumen",
       description: "Estado de la corrida y señales que requieren atención.",
-      icon: "▣",
+      icon: "summary.png",
     },
     executions: {
       label: "Ejecuciones",
       description: "Tendencias, historial y comparación entre corridas.",
-      icon: "▶",
+      icon: "executions.png",
     },
     quality: {
       label: "Calidad",
       description: "Estabilidad, fallos recurrentes y rendimiento histórico.",
-      icon: "◇",
+      icon: "quality.png",
     },
     analysis: {
       label: "Análisis",
       description: "Bandeja de trabajo para investigar y clasificar fallos.",
-      icon: "!",
+      icon: "analysis.png",
     },
     tests: {
       label: "Pruebas",
       description: "Explorador de casos, pasos, evidencias e historial por Jira.",
-      icon: "☑",
+      icon: "tests.png",
     },
     preferences: {
       label: "Preferencias",
       description: "Apariencia y configuración local del espacio de trabajo.",
-      icon: "⚙",
+      icon: "preferences.png",
     },
   };
 
@@ -2747,7 +2747,9 @@
           aria-current="${state.view === key ? "page" : "false"}"
           title="${escapeHtml(item.label)}"
         >
-          <span class="sidebarIcon" aria-hidden="true">${item.icon}</span>
+          <span class="sidebarIcon" aria-hidden="true">
+            <img class="sidebarIconImage" src="assets/menu-icons/${escapeHtml(item.icon)}" alt="">
+          </span>
           <span class="sidebarLabel">${escapeHtml(item.label)}</span>
           ${badges[key] ? `<span class="sidebarBadge">${escapeHtml(badges[key])}</span>` : ""}
         </button>`).join("")}
