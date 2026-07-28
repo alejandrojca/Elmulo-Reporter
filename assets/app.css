@@ -850,7 +850,7 @@ button {
   margin: 1rem 0;
 }
 
-.trendHistoryStats span {
+.historicalExecutionCount {
   background: var(--pw-blue-050);
   border-radius: 999px;
   color: var(--pw-gray-700);
@@ -858,9 +858,49 @@ button {
   padding: 0.45rem 0.65rem;
 }
 
-.trendHistoryStats .passed { color: #11694f; }
-.trendHistoryStats .failed { color: #b42143; }
-.trendHistoryStats .otherErrors { color: #875100; }
+.historicalStatusFilters {
+  display: flex;
+  flex: 1 1 420px;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.historicalStatusFilter {
+  --historical-status-color: var(--pw-gray-700);
+  background: color-mix(in srgb, var(--historical-status-color) 7%, var(--pw-white));
+  border: 1px solid color-mix(in srgb, var(--historical-status-color) 55%, var(--pw-gray-200));
+  border-radius: 999px;
+  color: var(--historical-status-color);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.42rem 0.65rem;
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.historicalStatusFilter.passed { --historical-status-color: var(--pw-success); }
+.historicalStatusFilter.failed { --historical-status-color: var(--pw-danger); }
+.historicalStatusFilter.environment_error { --historical-status-color: var(--pw-warning); }
+.historicalStatusFilter.precondition_error { --historical-status-color: #e87922; }
+.historicalStatusFilter.outdated_test { --historical-status-color: #7c5ce5; }
+.historicalStatusFilter.reported { --historical-status-color: var(--pw-blue-600); }
+.historicalStatusFilter.skipped,
+.historicalStatusFilter.pending { --historical-status-color: #71859a; }
+
+.historicalStatusFilter:hover,
+.historicalStatusFilter:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--historical-status-color) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.historicalStatusFilter.active {
+  background: var(--historical-status-color);
+  border-color: var(--historical-status-color);
+  color: #fff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--historical-status-color) 22%, transparent);
+}
 
 .historicalTestList {
   display: grid;

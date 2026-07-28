@@ -204,6 +204,7 @@
     selectedTrendRunId: null,
     historicalRun: null,
     historicalRerun: null,
+    historicalStatusFilter: "",
     historyJiraId: null,
     historyTestTitle: "",
     historyCurrentTestId: null,
@@ -1131,10 +1132,38 @@
     }
 
     const tests = historicalRun.tests || [];
-    const statusCount = (status) =>
-      tests.filter((test) => test.status === status).length;
-    const otherErrors = tests.filter((test) =>
-      otherErrorStatuses.has(test.status)).length;
+    const historicalStatusOrder = [
+      "passed",
+      "failed",
+      "environment_error",
+      "precondition_error",
+      "outdated_test",
+      "reported",
+      "skipped",
+      "pending",
+      "unknown",
+    ];
+    const statusCounts = tests.reduce((counts, test) => {
+      const status = String(test.status || "unknown");
+      counts.set(status, (counts.get(status) || 0) + 1);
+      return counts;
+    }, new Map());
+    const visibleStatuses = [...statusCounts.entries()]
+      .sort(([left], [right]) => {
+        const leftIndex = historicalStatusOrder.indexOf(left);
+        const rightIndex = historicalStatusOrder.indexOf(right);
+        return (leftIndex < 0 ? historicalStatusOrder.length : leftIndex) -
+          (rightIndex < 0 ? historicalStatusOrder.length : rightIndex);
+      });
+    if (
+      state.historicalStatusFilter &&
+      !statusCounts.has(state.historicalStatusFilter)
+    ) {
+      state.historicalStatusFilter = "";
+    }
+    const filteredTests = state.historicalStatusFilter
+      ? tests.filter((test) => test.status === state.historicalStatusFilter)
+      : tests;
     const rerun = state.historicalRerun || historicalRun.rerun || {};
     const rerunBusy = ["starting", "running"].includes(rerun.status);
     const rerunLabel = rerun.status === "starting"
@@ -1176,14 +1205,19 @@
         ? `<div class="trendRerunFeedback ${rerun.status === "failed" || rerun.status === "unavailable" ? "error" : "success"}" role="status">${escapeHtml(rerunFeedback)}</div>`
         : ""}
       <div class="trendHistoryStats">
-        <span><strong>${tests.length}</strong> ejecuciones</span>
-        <span class="passed"><strong>${statusCount("passed")}</strong> exitosas</span>
-        <span class="failed"><strong>${statusCount("failed")}</strong> fallidas</span>
-        <span class="otherErrors"><strong>${otherErrors}</strong> otros errores</span>
+        <span class="historicalExecutionCount"><strong>${tests.length}</strong> ejecuciones</span>
+        <div class="historicalStatusFilters" aria-label="Filtrar pruebas históricas por estado">
+          ${visibleStatuses.map(([status, count]) => `<button
+            class="historicalStatusFilter ${escapeHtml(status)} ${state.historicalStatusFilter === status ? "active" : ""}"
+            type="button"
+            data-historical-status-filter="${escapeHtml(status)}"
+            aria-pressed="${state.historicalStatusFilter === status}"
+          ><strong>${escapeHtml(count)}</strong> ${escapeHtml(statusLabel[status] || status)}</button>`).join("")}
+        </div>
       </div>
       <div class="historicalTestList">
-        ${tests.length
-          ? tests.map((test) => `<article class="historicalTestRow">
+        ${filteredTests.length
+          ? filteredTests.map((test) => `<article class="historicalTestRow">
               <span class="statusDot ${escapeHtml(test.status)}" aria-hidden="true"></span>
               <span>
                 <strong>${escapeHtml(test.title)}</strong>
@@ -1228,7 +1262,16 @@
       state.selectedTrendRunId = null;
       state.historicalRun = null;
       state.historicalRerun = null;
+      state.historicalStatusFilter = "";
       renderTrendArea();
+    });
+    document.querySelectorAll("[data-historical-status-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const status = button.dataset.historicalStatusFilter;
+        state.historicalStatusFilter =
+          state.historicalStatusFilter === status ? "" : status;
+        renderTrendHistoryPanel();
+      });
     });
     document.querySelector("[data-rerun-trend-report]")?.addEventListener(
       "click",
@@ -1306,6 +1349,7 @@
         state.selectedTrendRunId = requestedRunId;
         state.historicalRun = null;
         state.historicalRerun = null;
+        state.historicalStatusFilter = "";
         renderTrendArea();
 
         try {
@@ -1335,6 +1379,7 @@
     state.selectedTrendRunId = null;
     state.historicalRun = null;
     state.historicalRerun = null;
+    state.historicalStatusFilter = "";
     const trendContent = document.getElementById("trend-content");
     const trendHistory = document.getElementById("trend-history");
     const trendCounter = document.getElementById("trend-run-count");

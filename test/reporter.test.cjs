@@ -1081,6 +1081,11 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.doesNotMatch(appSource, /window\.confirm/);
   assert.match(appSource, /id="trend-environment"/);
   assert.match(appSource, /data-close-trend-history/);
+  assert.match(appSource, /historicalStatusFilter:\s*""/);
+  assert.match(appSource, /data-historical-status-filter/);
+  assert.match(appSource, /aria-pressed="\$\{state\.historicalStatusFilter === status\}"/);
+  assert.match(appSource, /const filteredTests = state\.historicalStatusFilter/);
+  assert.match(stylesSource, /\.historicalStatusFilter\.active/);
   assert.match(appSource, /data-rerun-trend-report/);
   assert.match(appSource, /\/api\/runs\/\$\{encodeURIComponent\(runId\)\}\/rerun/);
   assert.match(appSource, /Reejecutar reporte/);
