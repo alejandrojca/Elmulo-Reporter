@@ -812,6 +812,10 @@ test("reutiliza defectos activos y recrea los finalizados", async () => {
     global.fetch = async (url, options = {}) => {
       calls.push({ url: String(url), options });
       if (String(url).includes("/search/jql")) {
+        const jql = new URL(String(url)).searchParams.get("jql");
+        assert.match(jql, /labels = "elmulo-/);
+        assert.match(jql, /" ORDER BY created DESC$/);
+        assert.doesNotMatch(jql, /AND ORDER BY/);
         return response({
           issues: [{
             key: "FONLP06-2400",

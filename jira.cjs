@@ -303,12 +303,12 @@ async function jiraRequest(config, pathname, options = {}) {
 }
 
 async function findMatchingIssues(config, fingerprint) {
-  const jql = [
+  const conditions = [
     `project = "${config.projectKey}"`,
     `issuetype = "${config.issueTypeName}"`,
     `labels = "${fingerprint}"`,
-    "ORDER BY created DESC",
   ].join(" AND ");
+  const jql = `${conditions} ORDER BY created DESC`;
   const query = new URLSearchParams({
     jql,
     fields: "summary,status,labels",
