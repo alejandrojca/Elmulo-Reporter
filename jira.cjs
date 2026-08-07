@@ -11,7 +11,29 @@ const DEFAULTS = Object.freeze({
   tipoFieldId: "customfield_10431",
   tipoValueId: "23025",
   tipoValue: "Mantenimiento (IT4IT)",
+  severityFieldId: "customfield_10498",
+  severityValueId: "25944",
+  testTypeFieldId: "customfield_11020",
+  automatedTestTypeValueId: "28937",
 });
+
+const TIPO_OPTIONS = Object.freeze([
+  ["23025", "Mantenimiento (IT4IT)"],
+  ["23026", "Evolutivo de Producto"],
+  ["23027", "Normativo/Regulatorio/Compliance"],
+  ["23028", "Nuevo Producto (VCP)"],
+  ["23029", "Tareas Operativas"],
+  ["23030", "Incidentes / Problems"],
+]);
+
+const SEVERITY_OPTIONS = Object.freeze([
+  ["25941", "Urgent"],
+  ["25942", "Very High"],
+  ["25943", "High"],
+  ["25944", "Medium"],
+  ["25945", "Low"],
+  ["25946", "Blocked"],
+]);
 
 function extractCredential(source, name) {
   return String(source || "").match(
@@ -60,6 +82,18 @@ function loadJiraConfig(projectRoot, env = process.env) {
     tipoFieldId: String(env.ELMULO_JIRA_TIPO_FIELD_ID || DEFAULTS.tipoFieldId).trim(),
     tipoValueId: String(env.ELMULO_JIRA_TIPO_VALUE_ID || DEFAULTS.tipoValueId).trim(),
     tipoValue: String(env.ELMULO_JIRA_TIPO_VALUE || DEFAULTS.tipoValue).trim(),
+    severityFieldId: String(
+      env.ELMULO_JIRA_SEVERITY_FIELD_ID || DEFAULTS.severityFieldId,
+    ).trim(),
+    severityValueId: String(
+      env.ELMULO_JIRA_SEVERITY_VALUE_ID || DEFAULTS.severityValueId,
+    ).trim(),
+    testTypeFieldId: String(
+      env.ELMULO_JIRA_TEST_TYPE_FIELD_ID || DEFAULTS.testTypeFieldId,
+    ).trim(),
+    automatedTestTypeValueId: String(
+      env.ELMULO_JIRA_AUTOMATED_TEST_TYPE_VALUE_ID || DEFAULTS.automatedTestTypeValueId,
+    ).trim(),
     authorization,
     cookie: String(env.ELMULO_JIRA_COOKIE || fileCredentials.cookie || "").trim(),
     credentialsPath,
@@ -193,7 +227,7 @@ function relatedJiraCase(test) {
     .find((tag) => /^[A-Z][A-Z0-9]+-\d+$/.test(tag)) || "";
 }
 
-function buildDescription({ config, projectRoot, run, test, comment, previousIssue }) {
+function buildDescription({ config, projectRoot, run, test, comment, previousIssue, draft = {} }) {
   const exchange = selectFailureExchange(test);
   const failedStep = (test.steps || []).find((step) => step.status === "failed");
   const blocks = [
@@ -206,9 +240,9 @@ function buildDescription({ config, projectRoot, run, test, comment, previousIss
       `Ambiente: ${run.environment || "Sin especificar"}`,
       `Fecha de ejecución: ${run.endedAt || run.finishedAt || new Date().toISOString()}`,
     ].join("\n")),
-    codeBlock(buildExecutedGherkin(projectRoot, test), "gherkin"),
+    codeBlock(draft.gherkin ?? buildExecutedGherkin(projectRoot, test), "gherkin"),
     heading("Error final"),
-    codeBlock(String(test.error?.stack || test.error?.message || "Error sin detalle")),
+    codeBlock(draft.error ?? String(test.error?.stack || test.error?.message || "Error sin detalle")),
   ];
   if (failedStep) {
     blocks.push(paragraph("Paso que falló:"), codeBlock(
@@ -219,9 +253,9 @@ function buildDescription({ config, projectRoot, run, test, comment, previousIss
   if (exchange) {
     blocks.push(
       heading("Request asociado a la falla"),
-      codeBlock(prettyJson(exchange.request), "json"),
+      codeBlock(draft.request ?? prettyJson(exchange.request), "json"),
       heading("Respuesta asociada a la falla"),
-      codeBlock(prettyJson(exchange.response), "json"),
+      codeBlock(draft.response ?? prettyJson(exchange.response), "json"),
     );
   } else {
     blocks.push(heading("Request y respuesta"), paragraph(
@@ -333,10 +367,14 @@ async function createIssue(config, context, fingerprint, previousIssue) {
       fields: {
         project: { id: config.projectId },
         issuetype: { id: config.issueTypeId },
-        summary: defectSummary(context.test, Boolean(previousIssue)),
+        summary: String(
+          context.draft?.summary || defectSummary(context.test, Boolean(previousIssue)),
+        ).trim().slice(0, 255),
         description: buildDescription({ config, ...context, previousIssue }),
         reporter: { accountId: myself.accountId },
-        [config.tipoFieldId]: { id: config.tipoValueId },
+        [config.tipoFieldId]: { id: context.draft.tipoId },
+        [config.severityFieldId]: { id: context.draft.severityId },
+        [config.testTypeFieldId]: { id: config.automatedTestTypeValueId },
         labels: [fingerprint, "elmulo-reporter"],
       },
     }),
@@ -344,19 +382,50 @@ async function createIssue(config, context, fingerprint, previousIssue) {
   return { id: data.id, key: data.key };
 }
 
-async function reportDefect({ config, projectRoot, run, test, comment }) {
+async function reportDefect({ config, projectRoot, run, test, comment, draft = {} }) {
   if (!String(comment || "").trim()) {
     throw new Error("El comentario de la falla es obligatorio.");
   }
   if (test.status !== "failed") {
     throw new Error("Solo se pueden reportar pruebas fallidas.");
   }
+  const tipoId = String(draft.tipoId || config.tipoValueId);
+  const severityId = String(draft.severityId || config.severityValueId);
+  if (!TIPO_OPTIONS.some(([id]) => id === tipoId)) {
+    throw new Error("El tipo seleccionado no es válido.");
+  }
+  if (!SEVERITY_OPTIONS.some(([id]) => id === severityId)) {
+    throw new Error("La severidad seleccionada no es válida.");
+  }
+  const normalizedDraft = {
+    summary: String(draft.summary || "").trim().slice(0, 255),
+    gherkin: draft.gherkin === undefined
+      ? undefined
+      : String(draft.gherkin).slice(0, 30_000),
+    error: draft.error === undefined
+      ? undefined
+      : String(draft.error).slice(0, 30_000),
+    request: draft.request === undefined
+      ? undefined
+      : String(draft.request).slice(0, 60_000),
+    response: draft.response === undefined
+      ? undefined
+      : String(draft.response).slice(0, 60_000),
+    tipoId,
+    severityId,
+  };
   const fingerprint = defectFingerprint(config, test);
   const matches = await findMatchingIssues(config, fingerprint);
   const active = matches.find(
     (issue) => issue.fields?.status?.statusCategory?.key !== "done",
   );
-  const context = { projectRoot, run, test, comment: String(comment).trim() };
+  const context = {
+    projectRoot,
+    run,
+    test,
+    comment: String(comment).trim(),
+    draft: normalizedDraft,
+  };
   if (active) {
     await addRecurrenceComment(config, active.key, context);
     return {
@@ -379,6 +448,8 @@ async function reportDefect({ config, projectRoot, run, test, comment }) {
 
 module.exports = {
   DEFAULTS,
+  SEVERITY_OPTIONS,
+  TIPO_OPTIONS,
   buildDescription,
   buildExecutedGherkin,
   defectFingerprint,

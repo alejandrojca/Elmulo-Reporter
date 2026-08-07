@@ -1849,8 +1849,53 @@
     document.getElementById("jira-defect-confirmation-modal")?.remove();
   }
 
+  const jiraTipoOptions = [
+    ["23025", "Mantenimiento (IT4IT)"],
+    ["23026", "Evolutivo de Producto"],
+    ["23027", "Normativo/Regulatorio/Compliance"],
+    ["23028", "Nuevo Producto (VCP)"],
+    ["23029", "Tareas Operativas"],
+    ["23030", "Incidentes / Problems"],
+  ];
+
+  const jiraSeverityOptions = [
+    ["25941", "Urgent"],
+    ["25942", "Very High"],
+    ["25943", "High"],
+    ["25944", "Medium"],
+    ["25945", "Low"],
+    ["25946", "Blocked"],
+  ];
+
+  function jiraDraftFor(test, comment) {
+    const failedStep = (test.steps || []).find((step) => step.status === "failed");
+    const prefix = (test.tags || []).some((tag) => String(tag).toLowerCase() === "@mtt")
+      ? "[MTT]"
+      : "[Elmulo]";
+    const error = String(test.error?.stack || test.error?.message || "Error sin detalle");
+    const summaryError = String(failedStep?.error || firstErrorLine(test.error));
+    const exchange = (test.http || []).at(-1);
+    return {
+      summary: `${prefix} ${test.title}: ${summaryError}`.slice(0, 255),
+      comment,
+      gherkin: [
+        ...(test.tags?.length ? [test.tags.join(" ")] : []),
+        `Scenario: ${test.title}`,
+        ...(test.steps || [])
+          .filter((step) => step.status !== "skipped")
+          .map((step) => `  ${step.keyword || "And"} ${step.name}`),
+      ].join("\n"),
+      error,
+      request: exchange ? formatCurlRequest(exchange.request || {}) : "Sin request asociado.",
+      response: exchange
+        ? formatHttpPayload(exchange.response?.body)
+        : "Sin respuesta asociada.",
+    };
+  }
+
   function openJiraDefectConfirmation(test, comment) {
     closeJiraDefectConfirmation();
+    const draft = jiraDraftFor(test, comment);
     const dialog = document.createElement("dialog");
     dialog.id = "jira-defect-confirmation-modal";
     dialog.className = "reuseConfirmationModal jiraDefectModal";
@@ -1859,23 +1904,66 @@
         <header>
           <div>
             <p class="eyebrow">Creación de defecto</p>
-            <h2>¿Confirmás el reporte en Jira?</h2>
+            <h2>Revisá el defecto antes de crearlo</h2>
           </div>
           <button type="button" class="modalCloseButton" data-close-jira-defect aria-label="Cerrar">×</button>
         </header>
-        <div class="confirmationBody jiraDefectConfirmationBody">
-          <dl>
-            <div><dt>Proyecto</dt><dd>FONLP06</dd></div>
-            <div><dt>Tipo</dt><dd>Error</dd></div>
-            <div><dt>Clasificación</dt><dd>Mantenimiento (IT4IT)</dd></div>
-            <div><dt>Escenario</dt><dd>${escapeHtml(test.title)}</dd></div>
-            <div><dt>Ambiente</dt><dd>${escapeHtml(run.environment || "Sin especificar")}</dd></div>
-          </dl>
-          <section>
-            <h3>Comentario de la falla</h3>
-            <p>${escapeHtml(comment)}</p>
-          </section>
-          <p class="jiraDefectWarning">Se enviarán a Jira el Gherkin ejecutado, el error final y el request/response asociados a la falla.</p>
+        <div class="confirmationBody jiraDefectConfirmationBody jiraDefectPreview">
+          <div class="jiraDefectFieldGrid">
+            <label class="jiraDefectField jiraDefectFieldWide">
+              Resumen
+              <input data-jira-summary maxlength="255" value="${escapeHtml(draft.summary)}" />
+            </label>
+            <label class="jiraDefectField">
+              Proyecto
+              <input value="FONLP06" disabled />
+            </label>
+            <label class="jiraDefectField">
+              Tipo de incidencia
+              <input value="Error" disabled />
+            </label>
+            <label class="jiraDefectField">
+              Tipo
+              <select data-jira-tipo>
+                ${jiraTipoOptions.map(([id, label], index) => `<option value="${id}" ${index === 0 ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="jiraDefectField">
+              Severity
+              <select data-jira-severity>
+                ${jiraSeverityOptions.map(([id, label]) => `<option value="${id}" ${id === "25944" ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="jiraDefectField">
+              Tipo de prueba
+              <select disabled aria-label="Tipo de prueba"><option selected>Automatizado</option></select>
+            </label>
+            <label class="jiraDefectField">
+              Ambiente
+              <input value="${escapeHtml(run.environment || "Sin especificar")}" disabled />
+            </label>
+          </div>
+          <label class="jiraDefectField">
+            Comentario de la falla
+            <textarea data-jira-comment rows="4">${escapeHtml(draft.comment)}</textarea>
+          </label>
+          <details open>
+            <summary>Gherkin ejecutado</summary>
+            <textarea data-jira-gherkin rows="8">${escapeHtml(draft.gherkin)}</textarea>
+          </details>
+          <details>
+            <summary>Error final</summary>
+            <textarea data-jira-error rows="6">${escapeHtml(draft.error)}</textarea>
+          </details>
+          <details>
+            <summary>Request asociado</summary>
+            <textarea data-jira-request rows="10">${escapeHtml(draft.request)}</textarea>
+          </details>
+          <details>
+            <summary>Respuesta asociada</summary>
+            <textarea data-jira-response rows="10">${escapeHtml(draft.response)}</textarea>
+          </details>
+          <p class="jiraDefectWarning">Revisá y modificá estos datos antes de confirmar. El tipo de prueba siempre se enviará como Automatizado.</p>
           <div class="confirmationFeedback" data-jira-defect-feedback aria-live="polite"></div>
         </div>
         <footer>
@@ -1894,14 +1982,25 @@
       feedback.textContent = "Consultando Jira y procesando el defecto…";
       feedback.className = "confirmationFeedback";
       try {
+        const editedComment = dialog.querySelector("[data-jira-comment]").value.trim();
+        if (!editedComment) throw new Error("El comentario de la falla es obligatorio.");
         const result = await requestElmuloJson("/api/jira/defects", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             runId: run.id,
             testId: test.id,
-            comment,
+            comment: editedComment,
             actor: state.actor,
+            draft: {
+              summary: dialog.querySelector("[data-jira-summary]").value,
+              tipoId: dialog.querySelector("[data-jira-tipo]").value,
+              severityId: dialog.querySelector("[data-jira-severity]").value,
+              gherkin: dialog.querySelector("[data-jira-gherkin]").value,
+              error: dialog.querySelector("[data-jira-error]").value,
+              request: dialog.querySelector("[data-jira-request]").value,
+              response: dialog.querySelector("[data-jira-response]").value,
+            },
           }),
         });
         state.annotations = result.annotations || state.annotations;

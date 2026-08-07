@@ -806,6 +806,15 @@ test("reutiliza defectos activos y recrea los finalizados", async () => {
       }],
     },
     comment: "La falla continúa.",
+    draft: {
+      summary: "Resumen editado desde Elmulo",
+      tipoId: "23030",
+      severityId: "25942",
+      gherkin: "Scenario: Gherkin editado",
+      error: "Error editado",
+      request: "curl editado",
+      response: "Respuesta editada",
+    },
   };
 
   try {
@@ -854,9 +863,14 @@ test("reutiliza defectos activos y recrea los finalizados", async () => {
     const createCall = calls.find((call) => call.url.endsWith("/rest/api/3/issue"));
     const payload = JSON.parse(createCall.options.body);
     assert.equal(payload.fields.issuetype.id, "10046");
-    assert.equal(payload.fields.customfield_10431.id, "23025");
+    assert.equal(payload.fields.summary, "Resumen editado desde Elmulo");
+    assert.equal(payload.fields.customfield_10431.id, "23030");
+    assert.equal(payload.fields.customfield_10498.id, "25942");
+    assert.equal(payload.fields.customfield_11020.id, "28937");
     assert.equal(payload.fields.description.type, "doc");
-    assert.match(JSON.stringify(payload), /\\"apikey\\": \\"visible\\"/);
+    assert.match(JSON.stringify(payload), /Gherkin editado/);
+    assert.match(JSON.stringify(payload), /curl editado/);
+    assert.match(JSON.stringify(payload), /Respuesta editada/);
   } finally {
     global.fetch = originalFetch;
   }
@@ -1001,6 +1015,14 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /data-create-jira-defect/);
   assert.match(appSource, /requestElmuloJson\("\/api\/jira\/defects"/);
   assert.match(appSource, /jira-defect-confirmation-modal/);
+  assert.match(appSource, /function jiraDraftFor/);
+  assert.match(appSource, /data-jira-summary/);
+  assert.match(appSource, /data-jira-tipo/);
+  assert.match(appSource, /data-jira-severity/);
+  assert.match(appSource, /<option selected>Automatizado<\/option>/);
+  assert.match(appSource, /data-jira-gherkin/);
+  assert.match(appSource, /data-jira-request/);
+  assert.match(stylesSource, /\.jiraDefectModal\s*\{[\s\S]*?max-width:\s*980px;/);
   assert.match(appSource, /El comentario es obligatorio antes de crear el defecto/);
   assert.match(appSource, /requestElmuloJson\("\/api\/annotations"/);
   assert.match(appSource, /\/api\/trends\?environment=/);

@@ -1527,6 +1527,84 @@ html[data-theme="dark"] .exampleRow .testMeta {
   gap: 1rem;
 }
 
+.jiraDefectModal {
+  max-width: 980px;
+}
+
+.jiraDefectModal .confirmationShell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: calc(100vh - 2rem);
+}
+
+.jiraDefectPreview {
+  overflow-y: auto;
+}
+
+.jiraDefectFieldGrid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.jiraDefectField,
+.jiraDefectPreview details {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.jiraDefectField {
+  color: var(--pw-blue-900);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.jiraDefectFieldWide {
+  grid-column: 1 / -1;
+}
+
+.jiraDefectField input,
+.jiraDefectField select,
+.jiraDefectField textarea,
+.jiraDefectPreview details textarea {
+  min-width: 0;
+  width: 100%;
+}
+
+.jiraDefectField textarea,
+.jiraDefectPreview details textarea {
+  font-family: inherit;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  resize: vertical;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.jiraDefectPreview details {
+  background: var(--pw-blue-050);
+  border: 1px solid var(--pw-gray-200);
+  border-radius: 14px;
+  padding: 0.8rem;
+}
+
+.jiraDefectPreview details summary {
+  color: var(--pw-blue-900);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .jiraDefectFieldGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .jiraDefectFieldWide {
+    grid-column: auto;
+  }
+}
+
 .jiraDefectConfirmationBody dl {
   background: var(--pw-blue-050);
   border-radius: 14px;

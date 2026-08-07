@@ -524,6 +524,7 @@ async function serveReport(options = {}) {
             run,
             test,
             comment,
+            draft: body.draft,
           });
 
           const database = await openDatabase(databasePath);
