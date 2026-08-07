@@ -1665,13 +1665,21 @@
   }
 
   function formatCurlRequest(request) {
+    const allowedHeaders = new Map([
+      ["content-type", "Content-Type"],
+      ["apikey", "apikey"],
+      ["x-consumer-username", "X-Consumer-Username"],
+    ]);
     const lines = [
       `curl --request ${String(request.method || "GET").toUpperCase()} \\`,
       `  --url ${shellQuote(requestUrl(request))}`,
     ];
-    httpHeaders(request.headers).forEach(([name, value]) => {
+    httpHeaders(request.headers)
+      .filter(([name]) => allowedHeaders.has(String(name).toLowerCase()))
+      .forEach(([name, value]) => {
+      const canonicalName = allowedHeaders.get(String(name).toLowerCase());
       lines[lines.length - 1] += " \\";
-      lines.push(`  --header ${shellQuote(`${name}: ${value}`)}`);
+      lines.push(`  --header ${shellQuote(`${canonicalName}: ${value}`)}`);
     });
     if (request.body !== undefined && request.body !== null && request.body !== "") {
       lines[lines.length - 1] += " \\";
@@ -1681,14 +1689,7 @@
   }
 
   function formatHttpResponse(response) {
-    const status = response.status ?? "";
-    const statusText = response.statusText ? ` ${response.statusText}` : "";
-    const lines = [`HTTP ${status}${statusText}`.trim()];
-    httpHeaders(response.headers).forEach(([name, value]) => lines.push(`${name}: ${value}`));
-    if (response.body !== undefined && response.body !== null && response.body !== "") {
-      lines.push("", formatHttpPayload(response.body));
-    }
-    return lines.join("\n");
+    return formatHttpPayload(response.body);
   }
 
   function renderHttpExchanges(test) {

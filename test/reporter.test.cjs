@@ -1164,12 +1164,20 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /firstErrorLine\(test\.error\)/);
   assert.match(appSource, /function renderHttpExchanges/);
   assert.match(appSource, /function formatCurlRequest/);
+  assert.match(appSource, /\["content-type", "Content-Type"\]/);
+  assert.match(appSource, /\["apikey", "apikey"\]/);
+  assert.match(appSource, /\["x-consumer-username", "X-Consumer-Username"\]/);
+  assert.match(appSource, /allowedHeaders\.has\(String\(name\)\.toLowerCase\(\)\)/);
   assert.match(appSource, /--data-raw/);
   assert.match(appSource, /formatHttpResponse\(response\)/);
+  assert.match(appSource, /return formatHttpPayload\(response\.body\)/);
+  assert.doesNotMatch(appSource, /lines = \[`HTTP \$\{status\}/);
   assert.match(appSource, /JSON\.stringify\(JSON\.parse\(value\), null, 2\)/);
   assert.match(appSource, /<details class="httpDisclosure">/);
   assert.doesNotMatch(appSource, /<details class="httpDisclosure" open>/);
   assert.match(stylesSource, /\.httpExchangeList/);
+  assert.match(stylesSource, /\.httpDisclosure pre\s*\{[\s\S]*?overflow-x:\s*hidden;/);
+  assert.match(stylesSource, /\.httpDisclosure pre\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/);
   assert.match(stylesSource, /\.statusDonut/);
   assert.match(stylesSource, /\.statusDistributionLegend/);
   assert.match(
