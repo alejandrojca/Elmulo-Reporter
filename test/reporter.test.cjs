@@ -1163,6 +1163,10 @@ test("configura la interfaz sin selección y con seguimiento de fallas", () => {
   assert.match(appSource, /function firstErrorLine/);
   assert.match(appSource, /firstErrorLine\(test\.error\)/);
   assert.match(appSource, /function renderHttpExchanges/);
+  assert.match(appSource, /function formatCurlRequest/);
+  assert.match(appSource, /--data-raw/);
+  assert.match(appSource, /formatHttpResponse\(response\)/);
+  assert.match(appSource, /JSON\.stringify\(JSON\.parse\(value\), null, 2\)/);
   assert.match(appSource, /<details class="httpDisclosure">/);
   assert.doesNotMatch(appSource, /<details class="httpDisclosure" open>/);
   assert.match(stylesSource, /\.httpExchangeList/);

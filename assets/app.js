@@ -1614,12 +1614,81 @@
   }
 
   function formatHttpPayload(value) {
-    if (typeof value === "string") return value;
+    if (typeof value === "string") {
+      try {
+        return JSON.stringify(JSON.parse(value), null, 2);
+      } catch {
+        return value;
+      }
+    }
     try {
       return JSON.stringify(value, null, 2);
     } catch {
       return String(value ?? "");
     }
+  }
+
+  function shellQuote(value) {
+    return `'${String(value).replaceAll("'", `'"'"'`)}'`;
+  }
+
+  function httpHeaders(value) {
+    if (Array.isArray(value)) {
+      return value.flatMap((header) => {
+        if (Array.isArray(header) && header.length >= 2) return [[header[0], header[1]]];
+        const separator = String(header).indexOf(":");
+        return separator < 0
+          ? []
+          : [[String(header).slice(0, separator), String(header).slice(separator + 1).trim()]];
+      });
+    }
+    if (!value || typeof value !== "object") return [];
+    return Object.entries(value).flatMap(([name, headerValue]) =>
+      Array.isArray(headerValue)
+        ? headerValue.map((item) => [name, item])
+        : [[name, headerValue]]);
+  }
+
+  function requestUrl(request) {
+    const url = String(request.url || "");
+    if (!request.qs || typeof request.qs !== "object") return url;
+    try {
+      const parsed = new URL(url, window.location.href);
+      Object.entries(request.qs).forEach(([name, value]) => {
+        const values = Array.isArray(value) ? value : [value];
+        values.forEach((item) => parsed.searchParams.append(name, String(item)));
+      });
+      return parsed.href;
+    } catch {
+      return url;
+    }
+  }
+
+  function formatCurlRequest(request) {
+    const lines = [
+      `curl --request ${String(request.method || "GET").toUpperCase()} \\`,
+      `  --url ${shellQuote(requestUrl(request))}`,
+    ];
+    httpHeaders(request.headers).forEach(([name, value]) => {
+      lines[lines.length - 1] += " \\";
+      lines.push(`  --header ${shellQuote(`${name}: ${value}`)}`);
+    });
+    if (request.body !== undefined && request.body !== null && request.body !== "") {
+      lines[lines.length - 1] += " \\";
+      lines.push(`  --data-raw ${shellQuote(formatHttpPayload(request.body))}`);
+    }
+    return lines.join("\n");
+  }
+
+  function formatHttpResponse(response) {
+    const status = response.status ?? "";
+    const statusText = response.statusText ? ` ${response.statusText}` : "";
+    const lines = [`HTTP ${status}${statusText}`.trim()];
+    httpHeaders(response.headers).forEach(([name, value]) => lines.push(`${name}: ${value}`));
+    if (response.body !== undefined && response.body !== null && response.body !== "") {
+      lines.push("", formatHttpPayload(response.body));
+    }
+    return lines.join("\n");
   }
 
   function renderHttpExchanges(test) {
@@ -1645,11 +1714,11 @@
             <p>Intercambio ${index + 1}</p>
             <details class="httpDisclosure">
               <summary>Request · ${escapeHtml(requestLabel)}</summary>
-              <pre>${escapeHtml(formatHttpPayload(request))}</pre>
+              <pre>${escapeHtml(formatCurlRequest(request))}</pre>
             </details>
             <details class="httpDisclosure">
               <summary>Respuesta · ${escapeHtml(responseLabel)}</summary>
-              <pre>${escapeHtml(formatHttpPayload(response))}</pre>
+              <pre>${escapeHtml(formatHttpResponse(response))}</pre>
             </details>
           </article>`;
         }).join("")}
