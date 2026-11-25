@@ -64,6 +64,7 @@
 
   const preferences = readLocalJson(preferenceStorageKey, {
     density: "comfortable",
+    countExamplesAsCases: false,
     theme: "light",
     sidebarCollapsed: false,
   });
@@ -102,7 +103,9 @@
   async function requestElmuloJson(apiPath, options = {}) {
     const localServerUrl = new URL(apiPath, "http://127.0.0.1:4178").href;
     const currentOriginUrl = new URL(apiPath, window.location.href).href;
-    const candidates = [...new Set([currentOriginUrl, localServerUrl])];
+    const candidates = apiPath === "/api/jira/defects"
+      ? [currentOriginUrl]
+      : [...new Set([currentOriginUrl, localServerUrl])];
     let lastError = null;
 
     for (const candidate of candidates) {
@@ -235,6 +238,7 @@
     trendLimit: Number(initialUrlState.get("runs") || 20),
     persistenceStatus: location.protocol === "file:" ? "local" : "saved",
     density: preferences.density || "comfortable",
+    countExamplesAsCases: preferences.countExamplesAsCases === true,
     theme: preferences.theme || "light",
     view: initialView,
     sidebarCollapsed: Boolean(preferences.sidebarCollapsed),
@@ -263,6 +267,7 @@
   function savePreferences() {
     localStorage.setItem(preferenceStorageKey, JSON.stringify({
       density: state.density,
+      countExamplesAsCases: state.countExamplesAsCases,
       theme: state.theme,
       sidebarCollapsed: state.sidebarCollapsed,
     }));
@@ -396,11 +401,13 @@
     const groups = new Map();
 
     for (const test of tests) {
-      const key = testCaseKey(test);
+      const key = state.countExamplesAsCases
+        ? `execution:${test.id}`
+        : testCaseKey(test);
       if (!groups.has(key)) {
         groups.set(key, {
           id: key,
-          title: originalTestTitle(test),
+          title: state.countExamplesAsCases ? test.title : originalTestTitle(test),
           spec: test.spec,
           tests: [],
         });
@@ -1456,7 +1463,7 @@
 
   function renderTestCaseGroup(group) {
     const hasExamples = group.tests.some((test) => test.isExample);
-    if (!hasExamples) {
+    if (state.countExamplesAsCases || !hasExamples) {
       return renderTestRow(group.tests[0]);
     }
 
@@ -3095,6 +3102,19 @@
             </label>
           </article>
           <article class="preferenceCard">
+            <span class="preferenceIcon" aria-hidden="true">#</span>
+            <div>
+              <h2>Conteo de casos</h2>
+              <p>Elegí cómo se agrupan los ejemplos en Resumen y Pruebas. El total de ejecuciones no cambia.</p>
+            </div>
+            <label>Contar casos
+              <select id="count-examples" aria-label="Contar casos">
+                <option value="scenario" ${!state.countExamplesAsCases ? "selected" : ""}>Por escenario · agrupar ejemplos</option>
+                <option value="example" ${state.countExamplesAsCases ? "selected" : ""}>Por ejemplo · un caso por fila</option>
+              </select>
+            </label>
+          </article>
+          <article class="preferenceCard">
             <span class="preferenceIcon" aria-hidden="true">≡</span>
             <div><h2>Densidad</h2><p>Ajustá cuánto contenido se muestra simultáneamente.</p></div>
             <label>Densidad de información
@@ -3157,6 +3177,12 @@
     document.getElementById("actor-name").addEventListener("change", (event) => {
       state.actor = event.target.value.trim() || "Usuario local";
       localStorage.setItem(actorStorageKey, state.actor);
+    });
+    document.getElementById("count-examples").addEventListener("change", (event) => {
+      state.countExamplesAsCases = event.target.value === "example";
+      state.expandedExampleGroups.clear();
+      savePreferences();
+      render();
     });
     document.getElementById("density").addEventListener("change", (event) => {
       state.density = event.target.value;

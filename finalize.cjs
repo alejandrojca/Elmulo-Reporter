@@ -168,6 +168,36 @@ function mergeCucumber(run, scenarios) {
   return run;
 }
 
+// Recover outline titles for direct Cypress runs without Cucumber JSON.
+function recoverOutlineTitles(run, projectRoot) {
+  const cache = new Map();
+  for (const test of run.tests || []) {
+    const example = String(test.title || "").match(/^(.*?)\s+\(example\s+#\d+\)\s*$/i);
+    if (!example || typeof test.spec !== "string" || !test.spec.endsWith(".feature")) continue;
+    const file = path.resolve(projectRoot, test.spec);
+    const relative = path.relative(projectRoot, file);
+    if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) continue;
+    if (!cache.has(file)) {
+      let source = "";
+      try {
+        source = fs.readFileSync(file, "utf8");
+      } catch {
+        // Historical runs may reference a spec absent from the checkout.
+      }
+      cache.set(file, [...source.matchAll(/^\s*(?:Scenario Outline|Scenario Template):[ \t]*(.+)$/gm)]
+        .map(([, title]) => {
+          title = title.trim();
+          const pattern = title.split(/<[^<>]+>/)
+            .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+            .join(".*?");
+          return { title, pattern: new RegExp(`^${pattern}$`) };
+        }));
+    }
+    const matches = cache.get(file).filter(({ pattern }) => pattern.test(example[1]));
+    if (matches.length === 1) test.originalTitle = matches[0].title;
+  }
+}
+
 function enrichRunTests(run) {
   for (const test of run.tests || []) {
     const exampleMatch = String(test.title || "").match(
@@ -435,7 +465,7 @@ function persistRun(database, run) {
         system: run.system || {},
         source: run.source || {},
         execution: run.execution || null,
-        reporterVersion: "2.0.0-beta.9",
+        reporterVersion: "2.0.0-beta.10",
       }),
     ],
   );
@@ -932,7 +962,7 @@ async function finalizeRun(options = {}) {
   if (!run) throw new Error(`No se encontró ${rawPath}`);
 
   run.schemaVersion = DATABASE_SCHEMA_VERSION;
-  run.reporterVersion = "2.0.0-beta.9";
+  run.reporterVersion = "2.0.0-beta.10";
   run.lifecycle = run.lifecycle || "completed";
   run.source = run.source || {
     branch: process.env.CI_COMMIT_REF_NAME || "",
@@ -943,6 +973,7 @@ async function finalizeRun(options = {}) {
   };
   mergeHttpManifest(run, runDir);
   mergeCucumber(run, readCucumberScenarios(projectRoot));
+  recoverOutlineTitles(run, projectRoot);
   enrichRunTests(run);
   copyEvidence(projectRoot, runDir, run);
 
@@ -978,6 +1009,7 @@ module.exports = {
   copyDirectoryContents,
   copyStaticAssets,
   enrichRunTests,
+  recoverOutlineTitles,
   finalizeRun,
   loadAnnotations,
   loadAnnotationAudit,
